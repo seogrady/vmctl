@@ -1,7 +1,6 @@
 services:
-{{#each services}}
-  {{this}}:
-    image: "{{this}}"
+{{#each service_packs}}
+  {{name}}:
+    image: "{{image.name}}:{{image.tag}}"
     restart: unless-stopped
 {{/each}}
-

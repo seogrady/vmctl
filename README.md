@@ -8,9 +8,10 @@ and service packs, and deterministic backend artifact rendering.
 ## CLI quick start
 
 ```bash
-cargo run -q -- --config vmctl.example.toml validate
-cargo run -q -- --config vmctl.example.toml plan
-cargo run -q -- --config vmctl.example.toml backend render
+cargo run -q -p vmctl -- --config vmctl.example.toml validate
+cargo run -q -p vmctl -- --config vmctl.example.toml plan
+cargo run -q -p vmctl -- --config vmctl.example.toml backend render
+cargo run -q -p vmctl -- --config vmctl.example.toml backend show-state
 ```
 
 The example config expects these environment variables when validating or
@@ -22,7 +23,27 @@ export PROXMOX_TOKEN_SECRET=...
 export TAILSCALE_AUTH_KEY=...
 ```
 
-Generated backend files are written to `backend/generated/workspace/`.
+Generated backend files are written to `backend/generated/workspace/`, and
+`vmctl.lock` is written at the workspace root.
+
+`vmctl plan` is the high-level domain plan. `vmctl backend render` writes the
+Terraform/OpenTofu working directory. `vmctl apply` renders that directory and
+then runs `tofu apply` or `terraform apply` if a backend binary is installed.
+
+## Workspace crates
+
+The implementation follows the crate layout in `plans/vmctl-hybrid-plan-packs.md`:
+
+- `crates/cli/` owns clap parsing, command dispatch, and terminal output.
+- `crates/config/`, `crates/domain/`, `crates/planner/`, and `crates/packs/`
+  own config loading, backend-agnostic models, desired-state construction, and
+  pack expansion.
+- `crates/backend/`, `crates/backend-terraform/`, and `crates/backend-native/`
+  define the backend interface, the Terraform renderer, and the future native
+  engine placeholder.
+- `crates/lockfile/`, `crates/import/`, `crates/render/`, and `crates/util/`
+  own lockfile persistence, import placeholders, human-facing rendering, and
+  shared helpers.
 
 ## Pack layout
 

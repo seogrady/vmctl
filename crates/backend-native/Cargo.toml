@@ -1,0 +1,11 @@
+[package]
+name = "vmctl-backend-native"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+vmctl-backend.workspace = true
+vmctl-domain.workspace = true
+vmctl-packs.workspace = true
+

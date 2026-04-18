@@ -1,0 +1,18 @@
+[package]
+name = "vmctl"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+vmctl-backend.workspace = true
+vmctl-backend-terraform.workspace = true
+vmctl-config.workspace = true
+vmctl-domain.workspace = true
+vmctl-import.workspace = true
+vmctl-lockfile.workspace = true
+vmctl-packs.workspace = true
+vmctl-planner.workspace = true
+vmctl-render.workspace = true
+

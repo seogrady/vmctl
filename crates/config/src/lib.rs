@@ -1,17 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use toml::Value;
-
-use crate::packs::{Expansion, PackRegistry};
-
-#[derive(Debug, Clone)]
-pub struct Workspace {
-    pub root: PathBuf,
-    pub generated_dir: PathBuf,
-}
+use vmctl_domain::{BackendConfig, Resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -26,50 +18,6 @@ pub struct Config {
     pub env: BTreeMap<String, Value>,
     #[serde(default)]
     pub resources: Vec<Resource>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackendConfig {
-    #[serde(default = "default_backend_kind")]
-    pub kind: String,
-    #[serde(flatten)]
-    pub settings: BTreeMap<String, Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Resource {
-    pub name: String,
-    pub kind: String,
-    #[serde(default)]
-    pub role: Option<String>,
-    #[serde(default)]
-    pub vmid: Option<u32>,
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-    #[serde(default)]
-    pub features: BTreeMap<String, Value>,
-    #[serde(flatten)]
-    pub settings: BTreeMap<String, Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DesiredState {
-    pub backend: BackendConfig,
-    pub resources: Vec<Resource>,
-    pub expansions: BTreeMap<String, Expansion>,
-}
-
-fn default_backend_kind() -> String {
-    "terraform".to_string()
-}
-
-impl Default for BackendConfig {
-    fn default() -> Self {
-        Self {
-            kind: default_backend_kind(),
-            settings: BTreeMap::new(),
-        }
-    }
 }
 
 impl Config {
@@ -104,41 +52,6 @@ impl Config {
     }
 }
 
-impl DesiredState {
-    pub fn from_config(
-        config: Config,
-        registry: &PackRegistry,
-        target: Option<&str>,
-    ) -> Result<Self> {
-        let resources: Vec<_> = config
-            .resources
-            .into_iter()
-            .filter(|resource| target.map_or(true, |name| resource.name == name))
-            .collect();
-
-        if let Some(target) = target {
-            if resources.is_empty() {
-                bail!("target resource `{target}` was not found");
-            }
-        }
-
-        let expansions = resources
-            .iter()
-            .map(|resource| {
-                registry
-                    .expand_resource(resource)
-                    .map(|expansion| (resource.name.clone(), expansion))
-            })
-            .collect::<Result<_>>()?;
-
-        Ok(Self {
-            backend: config.backend,
-            resources,
-            expansions,
-        })
-    }
-}
-
 struct Interpolator<'a> {
     root: Value,
     process_env: &'a BTreeMap<String, String>,
@@ -168,9 +81,7 @@ impl<'a> Interpolator<'a> {
 
     fn resolve_value(&self, value: &mut Value, stack: &mut Vec<String>) -> Result<()> {
         match value {
-            Value::String(input) => {
-                *input = self.resolve_string(input, stack)?;
-            }
+            Value::String(input) => *input = self.resolve_string(input, stack)?,
             Value::Array(items) => {
                 for item in items {
                     self.resolve_value(item, stack)?;

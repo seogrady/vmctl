@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vmctl"]
+members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
@@ -7,3 +7,23 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/local/vmctl"
 
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+handlebars = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+toml = "0.8"
+
+vmctl-backend = { path = "crates/backend" }
+vmctl-backend-native = { path = "crates/backend-native" }
+vmctl-backend-terraform = { path = "crates/backend-terraform" }
+vmctl-config = { path = "crates/config" }
+vmctl-domain = { path = "crates/domain" }
+vmctl-import = { path = "crates/import" }
+vmctl-lockfile = { path = "crates/lockfile" }
+vmctl-packs = { path = "crates/packs" }
+vmctl-planner = { path = "crates/planner" }
+vmctl-render = { path = "crates/render" }
+vmctl-util = { path = "crates/util" }

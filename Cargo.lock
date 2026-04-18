@@ -474,11 +474,119 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "vmctl-backend",
+ "vmctl-backend-terraform",
+ "vmctl-config",
+ "vmctl-domain",
+ "vmctl-import",
+ "vmctl-lockfile",
+ "vmctl-packs",
+ "vmctl-planner",
+ "vmctl-render",
+]
+
+[[package]]
+name = "vmctl-backend"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "vmctl-domain",
+ "vmctl-packs",
+]
+
+[[package]]
+name = "vmctl-backend-native"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vmctl-backend",
+ "vmctl-domain",
+ "vmctl-packs",
+]
+
+[[package]]
+name = "vmctl-backend-terraform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "vmctl-backend",
+ "vmctl-domain",
+ "vmctl-packs",
+ "vmctl-util",
+]
+
+[[package]]
+name = "vmctl-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+ "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "vmctl-import"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
+name = "vmctl-lockfile"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+ "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-packs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "handlebars",
  "serde",
  "serde_json",
  "toml",
+ "vmctl-domain",
 ]
+
+[[package]]
+name = "vmctl-planner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vmctl-config",
+ "vmctl-domain",
+ "vmctl-packs",
+]
+
+[[package]]
+name = "vmctl-render"
+version = "0.1.0"
+dependencies = [
+ "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-util"
+version = "0.1.0"
 
 [[package]]
 name = "windows-link"
