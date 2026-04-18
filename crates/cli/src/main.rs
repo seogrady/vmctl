@@ -30,9 +30,13 @@ enum Command {
         target: Option<String>,
     },
     Apply {
+        #[arg(long)]
+        auto_approve: bool,
         target: Option<String>,
     },
     Destroy {
+        #[arg(long)]
+        auto_approve: bool,
         target: String,
     },
     Import,
@@ -53,7 +57,10 @@ enum BackendCommand {
     },
     Render,
     ShowState,
-    Validate,
+    Validate {
+        #[arg(long)]
+        live: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -75,7 +82,11 @@ fn main() -> Result<()> {
             print!("{}", vmctl_render::render_plan(&desired));
             Ok(())
         }
-        Command::Apply { target } => {
+        Command::Apply {
+            auto_approve,
+            target,
+        } => {
+            require_auto_approve(auto_approve, "apply")?;
             let (workspace, desired, registry) =
                 load_workspace(&cli.config, &cli.packs, target.as_deref())?;
             let result = TerraformBackend.apply(&workspace, &desired, &registry)?;
@@ -89,7 +100,11 @@ fn main() -> Result<()> {
             println!("{}; wrote vmctl.lock", result.summary);
             Ok(())
         }
-        Command::Destroy { target } => {
+        Command::Destroy {
+            auto_approve,
+            target,
+        } => {
+            require_auto_approve(auto_approve, "destroy")?;
             let workspace = default_workspace()?;
             let result = TerraformBackend.destroy(&workspace, &TargetSelector { name: target })?;
             println!("{}", result.summary);
@@ -97,16 +112,21 @@ fn main() -> Result<()> {
         }
         Command::Import => {
             let workspace = default_workspace()?;
-            print!(
-                "{}",
-                vmctl_import::summarize_lockfile(&workspace.root.join("vmctl.lock"))?
-            );
+            let lockfile_path = workspace.root.join("vmctl.lock");
+            let lockfile = Lockfile::read_from_path(&lockfile_path)?;
+            print!("{}", vmctl_import::summarize_lockfile(&lockfile_path)?);
             let state_path = workspace
                 .root
                 .join(&workspace.generated_dir)
                 .join("terraform.tfstate");
             if state_path.exists() {
-                print!("{}", vmctl_import::summarize_terraform_state(&state_path)?);
+                print!(
+                    "{}",
+                    vmctl_import::summarize_terraform_state_with_lockfile(
+                        &state_path,
+                        Some(&lockfile)
+                    )?
+                );
             }
             Ok(())
         }
@@ -160,13 +180,17 @@ fn main() -> Result<()> {
                 Ok(())
             }
             BackendCommand::ShowState => show_backend_state(&default_workspace()?),
-            BackendCommand::Validate => {
+            BackendCommand::Validate { live } => {
                 let (workspace, desired, registry) = load_workspace(&cli.config, &cli.packs, None)?;
                 TerraformBackend.render_for_plan(
                     &workspace,
                     &desired,
                     &registry,
-                    PlanMode::DryRun,
+                    if live {
+                        PlanMode::Online
+                    } else {
+                        PlanMode::DryRun
+                    },
                 )?;
                 let result = TerraformBackend.validate_rendered(&workspace)?;
                 println!("{}", result.summary);
@@ -209,6 +233,13 @@ fn init_workspace(config_path: &Path, packs_path: &Path) -> Result<()> {
     std::fs::create_dir_all(packs_path.join("templates"))?;
     std::fs::create_dir_all(packs_path.join("scripts"))?;
     println!("initialized vmctl workspace");
+    Ok(())
+}
+
+fn require_auto_approve(auto_approve: bool, command: &str) -> Result<()> {
+    if !auto_approve {
+        anyhow::bail!("`vmctl {command}` requires --auto-approve");
+    }
     Ok(())
 }
 
@@ -270,4 +301,39 @@ fn collect_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn backend_validate_accepts_live_flag() {
+        Cli::command().debug_assert();
+        let cli = Cli::try_parse_from([
+            "vmctl",
+            "--config",
+            "vmctl.example.toml",
+            "backend",
+            "validate",
+            "--live",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Command::Backend {
+                command: BackendCommand::Validate { live },
+            } => assert!(live),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_requires_auto_approve() {
+        let err = require_auto_approve(false, "apply").unwrap_err();
+
+        assert!(err.to_string().contains("requires --auto-approve"));
+        assert!(require_auto_approve(true, "apply").is_ok());
+    }
 }

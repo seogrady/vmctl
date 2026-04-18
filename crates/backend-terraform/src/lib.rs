@@ -124,6 +124,10 @@ fn render_workspace(
     registry: &PackRegistry,
     include_proxmox_resources: bool,
 ) -> Result<RenderResult> {
+    if include_proxmox_resources {
+        validate_live_inputs(desired)?;
+    }
+
     let generated = workspace.root.join(&workspace.generated_dir);
     if generated.exists() {
         std::fs::remove_dir_all(&generated)?;
@@ -183,6 +187,86 @@ fn render_workspace(
         summary: format!("rendered {} files to {}", files.len(), generated.display()),
         files,
     })
+}
+
+fn validate_live_inputs(desired: &DesiredState) -> Result<()> {
+    let proxmox = desired
+        .backend
+        .settings
+        .get("proxmox")
+        .and_then(toml::Value::as_table);
+    let endpoint = proxmox
+        .and_then(|settings| settings.get("endpoint"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default();
+    let default_node = proxmox
+        .and_then(|settings| settings.get("node"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default();
+
+    if endpoint.trim().is_empty() {
+        bail!("live Terraform backend requires backend.proxmox.endpoint");
+    }
+    if default_node.trim().is_empty() {
+        bail!("live Terraform backend requires backend.proxmox.node or per-resource node");
+    }
+
+    for resource in &desired.resources {
+        let normalized = desired
+            .normalized_resources
+            .get(&resource.name)
+            .cloned()
+            .unwrap_or_else(|| normalize_fallback(resource));
+        let node = normalized.node.as_deref().unwrap_or(default_node);
+        if node.trim().is_empty() {
+            bail!("resource `{}` requires a Proxmox node", resource.name);
+        }
+        if normalized.vmid.is_none() {
+            bail!(
+                "resource `{}` requires vmid for live operations",
+                resource.name
+            );
+        }
+        if normalized
+            .storage
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            bail!(
+                "resource `{}` requires storage for live operations",
+                resource.name
+            );
+        }
+        if normalized
+            .bridge
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            bail!(
+                "resource `{}` requires bridge for live operations",
+                resource.name
+            );
+        }
+        let template = normalized.template.as_deref().unwrap_or_default();
+        if template.trim().is_empty() {
+            bail!(
+                "resource `{}` requires template for live operations",
+                resource.name
+            );
+        }
+        if normalized.kind == "vm" && normalized.clone_vmid.is_none() {
+            bail!(
+                "vm resource `{}` requires clone_vmid for live clone operations",
+                resource.name
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn write_json<T: serde::Serialize>(
@@ -457,10 +541,13 @@ fn vm_resource_json() -> (String, Value) {
         json!({
             "this": {
                 "count": "${var.proxmox_resource_enabled ? 1 : 0}",
+                "description": "${try(var.resource.description, \"managed by vmctl\")}",
                 "name": "${var.resource.name}",
                 "node_name": "${var.node_name}",
                 "vm_id": "${try(var.resource.vmid, null)}",
+                "on_boot": "${try(var.resource.start_on_boot, true)}",
                 "started": "${try(var.resource.start_on_boot, true)}",
+                "tags": "${try(var.resource.tags, [])}",
                 "agent": [{
                     "enabled": "${try(var.resource.agent, true)}"
                 }],
@@ -474,39 +561,58 @@ fn vm_resource_json() -> (String, Value) {
                 "disk": [{
                     "datastore_id": "${var.storage}",
                     "interface": "scsi0",
+                    "iothread": true,
+                    "discard": "on",
                     "size": "${try(var.resource.disk_gb, 8)}"
                 }],
                 "network_device": [{
                     "bridge": "${var.bridge}",
                     "disconnected": false,
                     "enabled": true,
-                    "firewall": false,
+                    "firewall": "${try(var.resource.network.firewall, false)}",
                     "mac_address": "${try(var.resource.network.mac, null)}",
                     "model": "virtio",
-                    "mtu": 0,
+                    "mtu": "${try(var.resource.network.mtu, 0)}",
                     "queues": 0,
                     "rate_limit": 0,
                     "trunks": "",
-                    "vlan_id": null
+                    "vlan_id": "${try(var.resource.network.vlan_id, null)}"
                 }],
                 "dynamic": {
                     "clone": {
-                        "for_each": "${can(tonumber(var.template)) ? [tonumber(var.template)] : []}",
+                        "for_each": "${try(var.resource.clone_vmid, null) == null ? [] : [var.resource.clone_vmid]}",
                         "content": {
                             "vm_id": "${clone.value}",
+                            "datastore_id": "${var.storage}",
                             "full": true
                         }
                     },
-                    "initialization": {
-                        "for_each": "${try(var.resource.cloud_init, null) == null && try(var.resource.network, null) == null ? [] : [1]}",
+                    "hostpci": {
+                        "for_each": "${try(var.resource.features.intel_igpu.enabled, false) ? [var.resource.features.intel_igpu] : []}",
                         "content": {
+                            "device": "hostpci0",
+                            "id": "${try(hostpci.value.pci_device, null)}",
+                            "mapping": "${try(hostpci.value.mapping, null)}",
+                            "pcie": "${try(hostpci.value.pcie, true)}",
+                            "rombar": "${try(hostpci.value.rombar, true)}",
+                            "xvga": "${try(hostpci.value.xvga, false)}"
+                        }
+                    },
+                    "initialization": {
+                        "for_each": "${try(var.resource.cloud_init, null) == null && try(var.resource.network, null) == null && try(var.resource.nameserver, null) == null && try(var.resource.searchdomain, null) == null ? [] : [1]}",
+                        "content": {
+                            "dns": [{
+                                "domain": "${try(var.resource.searchdomain, null)}",
+                                "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
+                            }],
                             "user_account": [{
                                 "username": "${try(var.resource.cloud_init.user, null)}",
                                 "keys": "${try(var.resource.cloud_init.ssh_key_file, null) == null ? [] : [file(var.resource.cloud_init.ssh_key_file)]}"
                             }],
                             "ip_config": [{
                                 "ipv4": [{
-                                    "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}"
+                                    "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}",
+                                    "gateway": "${try(var.resource.network.gateway, null)}"
                                 }]
                             }]
                         }
@@ -523,31 +629,52 @@ fn lxc_resource_json() -> (String, Value) {
         json!({
             "this": {
                 "count": "${var.proxmox_resource_enabled ? 1 : 0}",
-                "description": "managed by vmctl",
+                "description": "${try(var.resource.description, \"managed by vmctl\")}",
                 "node_name": "${var.node_name}",
                 "vm_id": "${try(var.resource.vmid, null)}",
+                "start_on_boot": "${try(var.resource.start_on_boot, true)}",
                 "started": "${try(var.resource.start_on_boot, true)}",
+                "tags": "${try(var.resource.tags, [])}",
                 "unprivileged": true,
+                "features": [{
+                    "keyctl": true,
+                    "nesting": "${try(var.resource.features.docker.enabled, false) || try(var.resource.features.tailscale.enabled, false)}"
+                }],
+                "memory": [{
+                    "dedicated": "${try(var.resource.memory, 1024)}"
+                }],
+                "cpu": [{
+                    "cores": "${try(var.resource.cores, 1)}"
+                }],
                 "initialization": [{
                     "hostname": "${var.resource.name}",
+                    "dns": [{
+                        "domain": "${try(var.resource.searchdomain, null)}",
+                        "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
+                    }],
                     "ip_config": [{
                         "ipv4": [{
-                            "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}"
+                            "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}",
+                            "gateway": "${try(var.resource.network.gateway, null)}"
                         }]
                     }]
                 }],
                 "network_interface": [{
                     "name": "veth0",
                     "bridge": "${var.bridge}",
-                    "mac_address": "${try(var.resource.network.mac, null)}"
+                    "enabled": true,
+                    "firewall": "${try(var.resource.network.firewall, false)}",
+                    "mac_address": "${try(var.resource.network.mac, null)}",
+                    "mtu": "${try(var.resource.network.mtu, 0)}",
+                    "vlan_id": "${try(var.resource.network.vlan_id, null)}"
                 }],
                 "disk": [{
                     "datastore_id": "${var.storage}",
                     "size": "${try(var.resource.rootfs_gb, 8)}"
                 }],
                 "operating_system": [{
-                    "template_file_id": "${var.template}",
-                    "type": "debian"
+                    "template_file_id": "${strcontains(var.template, \":\") ? var.template : format(\"%s:vztmpl/%s\", try(var.resource.template_storage, var.storage), var.template)}",
+                    "type": "${try(var.resource.os_type, \"debian\")}"
                 }]
             }
         }),
@@ -858,6 +985,7 @@ mod tests {
                     bridge: Some("vmbr0".to_string()),
                     storage: Some("local-lvm".to_string()),
                     template: Some("9000".to_string()),
+                    clone_vmid: Some(9000),
                     ..NormalizedResource::default()
                 },
             )]),
@@ -881,6 +1009,51 @@ mod tests {
     }
 
     #[test]
+    fn live_render_rejects_vm_without_clone_vmid() {
+        let desired = DesiredState {
+            backend: BackendConfig {
+                kind: "terraform".to_string(),
+                settings: BTreeMap::from([(
+                    "proxmox".to_string(),
+                    toml::Value::Table(toml::map::Map::from_iter([
+                        (
+                            "endpoint".to_string(),
+                            toml::Value::String("https://mini:8006/api2/json".to_string()),
+                        ),
+                        ("node".to_string(), toml::Value::String("mini".to_string())),
+                    ])),
+                )]),
+            },
+            resources: vec![Resource {
+                name: "media-stack".to_string(),
+                kind: "vm".to_string(),
+                role: None,
+                vmid: Some(210),
+                depends_on: Vec::new(),
+                features: BTreeMap::new(),
+                settings: BTreeMap::new(),
+            }],
+            normalized_resources: BTreeMap::from([(
+                "media-stack".to_string(),
+                NormalizedResource {
+                    name: "media-stack".to_string(),
+                    kind: "vm".to_string(),
+                    vmid: Some(210),
+                    bridge: Some("vmbr0".to_string()),
+                    storage: Some("local-lvm".to_string()),
+                    template: Some("ubuntu-template".to_string()),
+                    ..NormalizedResource::default()
+                },
+            )]),
+            expansions: BTreeMap::new(),
+        };
+
+        let err = validate_live_inputs(&desired).unwrap_err();
+
+        assert!(err.to_string().contains("requires clone_vmid"));
+    }
+
+    #[test]
     fn vm_module_matches_fixture() {
         let expected: Value =
             serde_json::from_str(include_str!("../tests/fixtures/vm-module-main.tf.json")).unwrap();
@@ -893,6 +1066,71 @@ mod tests {
             serde_json::from_str(include_str!("../tests/fixtures/lxc-module-main.tf.json"))
                 .unwrap();
         assert_eq!(base_module_main_json("lxc", true), expected);
+    }
+
+    #[test]
+    fn example_workspace_matches_fixtures() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let raw = include_str!("../../../vmctl.example.toml");
+        let env = BTreeMap::from([
+            ("PROXMOX_TOKEN_ID".to_string(), "root@pam!vmctl".to_string()),
+            (
+                "PROXMOX_TOKEN_SECRET".to_string(),
+                "dummy-secret".to_string(),
+            ),
+            (
+                "TAILSCALE_AUTH_KEY".to_string(),
+                "tskey-fixture".to_string(),
+            ),
+        ]);
+        let config = vmctl_config::Config::from_toml(raw, &env).unwrap();
+        let registry = PackRegistry::load(&workspace_root.join("packs")).unwrap();
+        let desired = vmctl_planner::build_desired_state(config, &registry, None).unwrap();
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        let workspace = Workspace {
+            root: root.clone(),
+            generated_dir: PathBuf::from("generated"),
+        };
+
+        TerraformBackend
+            .render(&workspace, &desired, &registry)
+            .unwrap();
+
+        assert_json_fixture(
+            &root.join("generated/main.tf.json"),
+            include_str!("../tests/fixtures/example-workspace/main.tf.json"),
+        );
+        assert_json_fixture(
+            &root.join("generated/provider.tf.json"),
+            include_str!("../tests/fixtures/example-workspace/provider.tf.json"),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/docker-compose.media"),
+            include_str!(
+                "../tests/fixtures/example-workspace/resources/media-stack/docker-compose.media"
+            ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/media.env"),
+            include_str!("../tests/fixtures/example-workspace/resources/media-stack/media.env"),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/tailscale-gateway/tailscale-setup.sh"),
+            include_str!("../tests/fixtures/example-workspace/resources/tailscale-gateway/tailscale-setup.sh"),
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn assert_json_fixture(path: &Path, expected: &str) {
+        let actual: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let expected: Value = serde_json::from_str(expected).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    fn assert_file_fixture(path: &Path, expected: &str) {
+        assert_eq!(std::fs::read_to_string(path).unwrap(), expected);
     }
 
     fn unique_temp_dir() -> PathBuf {

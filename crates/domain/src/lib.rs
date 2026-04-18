@@ -45,12 +45,19 @@ pub struct NormalizedResource {
     pub bridge: Option<String>,
     pub storage: Option<String>,
     pub template: Option<String>,
+    pub template_storage: Option<String>,
+    pub clone_vmid: Option<u32>,
     pub cores: Option<u32>,
     pub memory: Option<u32>,
     pub disk_gb: Option<u32>,
     pub rootfs_gb: Option<u32>,
     pub start_on_boot: Option<bool>,
     pub agent: Option<bool>,
+    pub nameserver: Option<String>,
+    pub searchdomain: Option<String>,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    pub os_type: Option<String>,
     pub network: Option<NetworkConfig>,
     pub cloud_init: Option<CloudInitConfig>,
     pub features: BTreeMap<String, Value>,
@@ -60,6 +67,11 @@ pub struct NormalizedResource {
 pub struct NetworkConfig {
     pub mode: Option<String>,
     pub mac: Option<String>,
+    pub address: Option<String>,
+    pub gateway: Option<String>,
+    pub vlan_id: Option<u32>,
+    pub mtu: Option<u32>,
+    pub firewall: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -96,12 +96,19 @@ fn normalize_resource(resource: &Resource) -> NormalizedResource {
         bridge: string_setting(resource, "bridge"),
         storage: string_setting(resource, "storage"),
         template: string_setting(resource, "template"),
+        template_storage: string_setting(resource, "template_storage"),
+        clone_vmid: u32_setting(resource, "clone_vmid").or_else(|| template_as_vmid(resource)),
         cores: u32_setting(resource, "cores"),
         memory: u32_setting(resource, "memory"),
         disk_gb: u32_setting(resource, "disk_gb"),
         rootfs_gb: u32_setting(resource, "rootfs_gb"),
         start_on_boot: bool_setting(resource, "start_on_boot"),
         agent: bool_setting(resource, "agent"),
+        nameserver: string_setting(resource, "nameserver"),
+        searchdomain: string_setting(resource, "searchdomain"),
+        description: string_setting(resource, "description"),
+        tags: string_array_setting(resource, "tags"),
+        os_type: string_setting(resource, "os_type"),
         network: network_config(resource),
         cloud_init: cloud_init_config(resource),
         features: resource.features.clone(),
@@ -128,6 +135,25 @@ fn bool_setting(resource: &Resource, key: &str) -> Option<bool> {
     resource.settings.get(key).and_then(toml::Value::as_bool)
 }
 
+fn string_array_setting(resource: &Resource, key: &str) -> Vec<String> {
+    resource
+        .settings
+        .get(key)
+        .and_then(toml::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn template_as_vmid(resource: &Resource) -> Option<u32> {
+    string_setting(resource, "template").and_then(|value| value.parse().ok())
+}
+
 fn network_config(resource: &Resource) -> Option<NetworkConfig> {
     let table = resource.settings.get("network")?.as_table()?;
     Some(NetworkConfig {
@@ -139,6 +165,23 @@ fn network_config(resource: &Resource) -> Option<NetworkConfig> {
             .get("mac")
             .and_then(toml::Value::as_str)
             .map(str::to_string),
+        address: table
+            .get("address")
+            .and_then(toml::Value::as_str)
+            .map(str::to_string),
+        gateway: table
+            .get("gateway")
+            .and_then(toml::Value::as_str)
+            .map(str::to_string),
+        vlan_id: table
+            .get("vlan_id")
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u32::try_from(value).ok()),
+        mtu: table
+            .get("mtu")
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u32::try_from(value).ok()),
+        firewall: table.get("firewall").and_then(toml::Value::as_bool),
     })
 }
 
@@ -237,6 +280,10 @@ mod tests {
         input
             .settings
             .insert("memory".to_string(), toml::Value::Integer(8192));
+        input.settings.insert(
+            "tags".to_string(),
+            toml::Value::Array(vec![toml::Value::String("vmctl".to_string())]),
+        );
 
         let resolved = apply_defaults(input, &defaults);
 
@@ -273,12 +320,32 @@ mod tests {
         input
             .settings
             .insert("memory".to_string(), toml::Value::Integer(16384));
+        input
+            .settings
+            .insert("clone_vmid".to_string(), toml::Value::Integer(9000));
+        input.settings.insert(
+            "nameserver".to_string(),
+            toml::Value::String("1.1.1.1".to_string()),
+        );
         input.settings.insert(
             "network".to_string(),
-            toml::Value::Table(toml::map::Map::from_iter([(
-                "mode".to_string(),
-                toml::Value::String("dhcp".to_string()),
-            )])),
+            toml::Value::Table(toml::map::Map::from_iter([
+                (
+                    "mode".to_string(),
+                    toml::Value::String("static".to_string()),
+                ),
+                (
+                    "address".to_string(),
+                    toml::Value::String("192.168.1.20/24".to_string()),
+                ),
+                (
+                    "gateway".to_string(),
+                    toml::Value::String("192.168.1.1".to_string()),
+                ),
+                ("vlan_id".to_string(), toml::Value::Integer(20)),
+                ("mtu".to_string(), toml::Value::Integer(1500)),
+                ("firewall".to_string(), toml::Value::Boolean(true)),
+            ])),
         );
 
         let normalized = normalize_resource(&input);
@@ -286,10 +353,15 @@ mod tests {
         assert_eq!(normalized.vmid, Some(210));
         assert_eq!(normalized.cores, Some(6));
         assert_eq!(normalized.memory, Some(16384));
-        assert_eq!(
-            normalized.network.and_then(|network| network.mode),
-            Some("dhcp".to_string())
-        );
+        assert_eq!(normalized.clone_vmid, Some(9000));
+        assert_eq!(normalized.nameserver, Some("1.1.1.1".to_string()));
+        let network = normalized.network.unwrap();
+        assert_eq!(network.mode, Some("static".to_string()));
+        assert_eq!(network.address, Some("192.168.1.20/24".to_string()));
+        assert_eq!(network.gateway, Some("192.168.1.1".to_string()));
+        assert_eq!(network.vlan_id, Some(20));
+        assert_eq!(network.mtu, Some(1500));
+        assert_eq!(network.firewall, Some(true));
     }
 
     #[test]

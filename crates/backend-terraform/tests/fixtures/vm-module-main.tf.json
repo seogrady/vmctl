@@ -14,28 +14,50 @@
             "type": "host"
           }
         ],
+        "description": "${try(var.resource.description, \"managed by vmctl\")}",
         "disk": [
           {
             "datastore_id": "${var.storage}",
+            "discard": "on",
             "interface": "scsi0",
+            "iothread": true,
             "size": "${try(var.resource.disk_gb, 8)}"
           }
         ],
         "dynamic": {
           "clone": {
             "content": {
+              "datastore_id": "${var.storage}",
               "full": true,
               "vm_id": "${clone.value}"
             },
-            "for_each": "${can(tonumber(var.template)) ? [tonumber(var.template)] : []}"
+            "for_each": "${try(var.resource.clone_vmid, null) == null ? [] : [var.resource.clone_vmid]}"
+          },
+          "hostpci": {
+            "content": {
+              "device": "hostpci0",
+              "id": "${try(hostpci.value.pci_device, null)}",
+              "mapping": "${try(hostpci.value.mapping, null)}",
+              "pcie": "${try(hostpci.value.pcie, true)}",
+              "rombar": "${try(hostpci.value.rombar, true)}",
+              "xvga": "${try(hostpci.value.xvga, false)}"
+            },
+            "for_each": "${try(var.resource.features.intel_igpu.enabled, false) ? [var.resource.features.intel_igpu] : []}"
           },
           "initialization": {
             "content": {
+              "dns": [
+                {
+                  "domain": "${try(var.resource.searchdomain, null)}",
+                  "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
+                }
+              ],
               "ip_config": [
                 {
                   "ipv4": [
                     {
-                      "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}"
+                      "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}",
+                      "gateway": "${try(var.resource.network.gateway, null)}"
                     }
                   ]
                 }
@@ -47,7 +69,7 @@
                 }
               ]
             },
-            "for_each": "${try(var.resource.cloud_init, null) == null && try(var.resource.network, null) == null ? [] : [1]}"
+            "for_each": "${try(var.resource.cloud_init, null) == null && try(var.resource.network, null) == null && try(var.resource.nameserver, null) == null && try(var.resource.searchdomain, null) == null ? [] : [1]}"
           }
         },
         "memory": [
@@ -61,18 +83,20 @@
             "bridge": "${var.bridge}",
             "disconnected": false,
             "enabled": true,
-            "firewall": false,
+            "firewall": "${try(var.resource.network.firewall, false)}",
             "mac_address": "${try(var.resource.network.mac, null)}",
             "model": "virtio",
-            "mtu": 0,
+            "mtu": "${try(var.resource.network.mtu, 0)}",
             "queues": 0,
             "rate_limit": 0,
             "trunks": "",
-            "vlan_id": null
+            "vlan_id": "${try(var.resource.network.vlan_id, null)}"
           }
         ],
         "node_name": "${var.node_name}",
+        "on_boot": "${try(var.resource.start_on_boot, true)}",
         "started": "${try(var.resource.start_on_boot, true)}",
+        "tags": "${try(var.resource.tags, [])}",
         "vm_id": "${try(var.resource.vmid, null)}"
       }
     },

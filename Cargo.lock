@@ -514,8 +514,10 @@ dependencies = [
  "serde_json",
  "toml",
  "vmctl-backend",
+ "vmctl-config",
  "vmctl-domain",
  "vmctl-packs",
+ "vmctl-planner",
  "vmctl-util",
 ]
 
@@ -542,6 +544,7 @@ name = "vmctl-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde",
  "serde_json",
  "sha2",
  "vmctl-domain",

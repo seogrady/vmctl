@@ -16,6 +16,7 @@ nameserver = "1.1.1.1"
 searchdomain = "${domain}"
 start_on_boot = true
 agent = true
+tags = ["vmctl", "homelab"]
 
 [const]
 bridge = "vmbr0"
@@ -33,7 +34,11 @@ name = "tailscale-gateway"
 kind = "lxc"
 role = "tailscale_gateway"
 vmid = 101
-template = "debian-12-standard_12.7-1_amd64.tar.zst"
+template = "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+rootfs_gb = 8
+memory = 1024
+cores = 1
+description = "Tailscale subnet router managed by vmctl"
 
 [resources.network]
 mode = "dhcp"
@@ -51,9 +56,11 @@ kind = "vm"
 role = "media_stack"
 vmid = 210
 template = "ubuntu-24-04-cloudinit-template"
+clone_vmid = 9000
 cores = 6
 memory = 16384
 disk_gb = 64
+description = "Media stack VM managed by vmctl"
 depends_on = ["${tailscale_gateway}"]
 
 [resources.network]
@@ -80,4 +87,3 @@ pci_device = "00:02.0"
 enabled = true
 minimal = true
 services = ["jellyfin", "sonarr", "radarr", "prowlarr", "qbittorrent"]
-

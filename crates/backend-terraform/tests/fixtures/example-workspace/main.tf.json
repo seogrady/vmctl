@@ -1,0 +1,148 @@
+{
+  "locals": {
+    "vmctl_resource_count": "${length(var.resources)}",
+    "vmctl_resource_names": "${[for resource in var.resources : resource.name]}"
+  },
+  "module": {
+    "media_stack": {
+      "bridge": "vmbr0",
+      "depends_on": [
+        "module.tailscale_gateway"
+      ],
+      "node_name": "mini",
+      "resource": {
+        "agent": true,
+        "bridge": "vmbr0",
+        "clone_vmid": 9000,
+        "cloud_init": {
+          "ssh_key_file": "/root/.ssh/media_stack.pub",
+          "user": "ubuntu"
+        },
+        "cores": 6,
+        "depends_on": [
+          "tailscale-gateway"
+        ],
+        "description": "Media stack VM managed by vmctl",
+        "disk_gb": 64,
+        "features": {
+          "docker": {
+            "enabled": true
+          },
+          "intel_igpu": {
+            "enabled": true,
+            "pci_device": "00:02.0"
+          },
+          "media_services": {
+            "enabled": true,
+            "minimal": true,
+            "services": [
+              "jellyfin",
+              "sonarr",
+              "radarr",
+              "prowlarr",
+              "qbittorrent"
+            ]
+          },
+          "tailscale": {
+            "auth_key": "<redacted>",
+            "enabled": true,
+            "mode": "client",
+            "tags": [
+              "tag:homelab"
+            ]
+          }
+        },
+        "kind": "vm",
+        "memory": 16384,
+        "name": "media-stack",
+        "nameserver": "1.1.1.1",
+        "network": {
+          "address": null,
+          "firewall": null,
+          "gateway": null,
+          "mac": null,
+          "mode": "dhcp",
+          "mtu": null,
+          "vlan_id": null
+        },
+        "node": null,
+        "os_type": null,
+        "role": "media_stack",
+        "rootfs_gb": null,
+        "searchdomain": "home.arpa",
+        "start_on_boot": true,
+        "storage": "local-lvm",
+        "tags": [
+          "vmctl",
+          "homelab"
+        ],
+        "template": "ubuntu-24-04-cloudinit-template",
+        "template_storage": null,
+        "vmid": 210
+      },
+      "source": "./modules/vm",
+      "storage": "local-lvm",
+      "template": "ubuntu-24-04-cloudinit-template"
+    },
+    "tailscale_gateway": {
+      "bridge": "vmbr0",
+      "node_name": "mini",
+      "resource": {
+        "agent": true,
+        "bridge": "vmbr0",
+        "clone_vmid": null,
+        "cloud_init": null,
+        "cores": 1,
+        "depends_on": [],
+        "description": "Tailscale subnet router managed by vmctl",
+        "disk_gb": null,
+        "features": {
+          "tailscale": {
+            "advertise_routes": [
+              "192.168.86.0/24"
+            ],
+            "auth_key": "<redacted>",
+            "enabled": true,
+            "mode": "router",
+            "tags": [
+              "tag:homelab"
+            ]
+          }
+        },
+        "kind": "lxc",
+        "memory": 1024,
+        "name": "tailscale-gateway",
+        "nameserver": "1.1.1.1",
+        "network": {
+          "address": null,
+          "firewall": null,
+          "gateway": null,
+          "mac": null,
+          "mode": "dhcp",
+          "mtu": null,
+          "vlan_id": null
+        },
+        "node": null,
+        "os_type": null,
+        "role": "tailscale_gateway",
+        "rootfs_gb": 8,
+        "searchdomain": "home.arpa",
+        "start_on_boot": true,
+        "storage": "local-lvm",
+        "tags": [
+          "vmctl",
+          "homelab"
+        ],
+        "template": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+        "template_storage": null,
+        "vmid": 101
+      },
+      "source": "./modules/lxc",
+      "storage": "local-lvm",
+      "template": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+    }
+  },
+  "terraform": {
+    "required_version": ">= 1.6.0"
+  }
+}

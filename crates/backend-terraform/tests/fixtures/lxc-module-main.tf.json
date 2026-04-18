@@ -3,42 +3,71 @@
     "proxmox_virtual_environment_container": {
       "this": {
         "count": "${var.proxmox_resource_enabled ? 1 : 0}",
-        "description": "managed by vmctl",
+        "cpu": [
+          {
+            "cores": "${try(var.resource.cores, 1)}"
+          }
+        ],
+        "description": "${try(var.resource.description, \"managed by vmctl\")}",
         "disk": [
           {
             "datastore_id": "${var.storage}",
             "size": "${try(var.resource.rootfs_gb, 8)}"
           }
         ],
+        "features": [
+          {
+            "keyctl": true,
+            "nesting": "${try(var.resource.features.docker.enabled, false) || try(var.resource.features.tailscale.enabled, false)}"
+          }
+        ],
         "initialization": [
           {
+            "dns": [
+              {
+                "domain": "${try(var.resource.searchdomain, null)}",
+                "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
+              }
+            ],
             "hostname": "${var.resource.name}",
             "ip_config": [
               {
                 "ipv4": [
                   {
-                    "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}"
+                    "address": "${try(var.resource.network.mode, \"dhcp\") == \"dhcp\" ? \"dhcp\" : try(var.resource.network.address, \"dhcp\")}",
+                    "gateway": "${try(var.resource.network.gateway, null)}"
                   }
                 ]
               }
             ]
           }
         ],
+        "memory": [
+          {
+            "dedicated": "${try(var.resource.memory, 1024)}"
+          }
+        ],
         "network_interface": [
           {
             "bridge": "${var.bridge}",
+            "enabled": true,
+            "firewall": "${try(var.resource.network.firewall, false)}",
             "mac_address": "${try(var.resource.network.mac, null)}",
-            "name": "veth0"
+            "mtu": "${try(var.resource.network.mtu, 0)}",
+            "name": "veth0",
+            "vlan_id": "${try(var.resource.network.vlan_id, null)}"
           }
         ],
         "node_name": "${var.node_name}",
         "operating_system": [
           {
-            "template_file_id": "${var.template}",
-            "type": "debian"
+            "template_file_id": "${strcontains(var.template, \":\") ? var.template : format(\"%s:vztmpl/%s\", try(var.resource.template_storage, var.storage), var.template)}",
+            "type": "${try(var.resource.os_type, \"debian\")}"
           }
         ],
+        "start_on_boot": "${try(var.resource.start_on_boot, true)}",
         "started": "${try(var.resource.start_on_boot, true)}",
+        "tags": "${try(var.resource.tags, [])}",
         "unprivileged": true,
         "vm_id": "${try(var.resource.vmid, null)}"
       }

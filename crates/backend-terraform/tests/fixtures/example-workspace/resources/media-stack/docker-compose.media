@@ -1,0 +1,31 @@
+services:
+  jellyfin:
+    image: "lscr.io/linuxserver/jellyfin:latest"
+    restart: unless-stopped
+  sonarr:
+    image: "lscr.io/linuxserver/sonarr:latest"
+    restart: unless-stopped
+  radarr:
+    image: "lscr.io/linuxserver/radarr:latest"
+    restart: unless-stopped
+  prowlarr:
+    image: "lscr.io/linuxserver/prowlarr:latest"
+    restart: unless-stopped
+  qbittorrent:
+    image: "lscr.io/linuxserver/qbittorrent:latest"
+    restart: unless-stopped
+  jellyseerr:
+    image: "fallenbagel/jellyseerr:latest"
+    restart: unless-stopped
+  bazarr:
+    image: "lscr.io/linuxserver/bazarr:latest"
+    restart: unless-stopped
+  homarr:
+    image: "ghcr.io/homarr-labs/homarr:latest"
+    restart: unless-stopped
+  jellystat-db:
+    image: "postgres:15-alpine"
+    restart: unless-stopped
+  jellystat:
+    image: "cyfershepard/jellystat:latest"
+    restart: unless-stopped

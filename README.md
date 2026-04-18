@@ -11,6 +11,7 @@ and service packs, and deterministic backend artifact rendering.
 cargo run -q -p vmctl -- --config vmctl.example.toml validate
 cargo run -q -p vmctl -- --config vmctl.example.toml plan
 cargo run -q -p vmctl -- --config vmctl.example.toml backend validate
+cargo run -q -p vmctl -- --config vmctl.example.toml backend validate --live
 cargo run -q -p vmctl -- --config vmctl.example.toml backend plan --dry-run
 cargo run -q -p vmctl -- --config vmctl.example.toml backend render
 cargo run -q -p vmctl -- --config vmctl.example.toml backend show-state
@@ -36,12 +37,14 @@ Recommended workflow:
 2. `vmctl plan` prints the high-level domain plan.
 3. `vmctl backend validate` renders a provider-free validation workspace and
    runs `tofu init` + `tofu validate`.
-4. `vmctl backend plan --dry-run` additionally runs `tofu plan -refresh=false`
+4. `vmctl backend validate --live` renders the provider-backed workspace and
+   runs `tofu init` + `tofu validate` without planning or applying.
+5. `vmctl backend plan --dry-run` additionally runs `tofu plan -refresh=false`
    without contacting Proxmox. It may still use network access to install
    OpenTofu providers or modules if they are not already cached.
-5. `vmctl backend render` writes the live Terraform/OpenTofu workspace.
-6. `vmctl apply` renders the live workspace and runs `tofu apply` or
-   `terraform apply`; this requires reachable Proxmox and
+6. `vmctl backend render` writes the live Terraform/OpenTofu workspace.
+7. `vmctl apply --auto-approve` renders the live workspace and runs
+   `tofu apply` or `terraform apply`; this requires reachable Proxmox and
    `TF_VAR_proxmox_api_token`.
 
 The current Terraform backend generates deterministic scaffold modules under
@@ -54,6 +57,17 @@ resources. Secrets are redacted from generated debug JSON; Terraform receives
 the Proxmox token via the sensitive `TF_VAR_proxmox_api_token` variable.
 `vmctl.lock` stores resource digests and generated artifact digests, excluding
 secret-valued fields from resource digests.
+
+Current deployment assumption: `vmctl apply` runs on the local machine that
+invokes the CLI and talks directly to the configured Proxmox API endpoint. The
+generated Terraform/OpenTofu workspace is also useful for inspection or manual
+execution elsewhere, but artifact-copy deployment is not yet a first-class
+workflow.
+
+Live operations require explicit approval at the `vmctl` layer. `vmctl apply`
+and `vmctl destroy` fail unless `--auto-approve` is supplied, and the live
+renderer checks for the Proxmox endpoint, node, VMID, bridge, storage, template,
+and VM clone VMID before it writes provider-backed artifacts.
 
 ## Workspace crates
 

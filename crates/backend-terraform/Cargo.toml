@@ -12,3 +12,7 @@ vmctl-backend.workspace = true
 vmctl-domain.workspace = true
 vmctl-packs.workspace = true
 vmctl-util.workspace = true
+
+[dev-dependencies]
+vmctl-config.workspace = true
+vmctl-planner.workspace = true
