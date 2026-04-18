@@ -60,6 +60,7 @@ pub struct NormalizedResource {
     pub os_type: Option<String>,
     pub network: Option<NetworkConfig>,
     pub cloud_init: Option<CloudInitConfig>,
+    pub provision: Option<ProvisionConfig>,
     pub features: BTreeMap<String, Value>,
 }
 
@@ -77,7 +78,16 @@ pub struct NetworkConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CloudInitConfig {
     pub user: Option<String>,
-    pub ssh_key_file: Option<String>,
+    pub ssh_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProvisionConfig {
+    pub host: Option<String>,
+    pub user: Option<String>,
+    pub private_key: Option<String>,
+    pub retries: Option<u32>,
+    pub retry_delay_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

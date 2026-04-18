@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,58 @@ pub struct Config {
     pub env: BTreeMap<String, Value>,
     #[serde(default)]
     pub resources: Vec<Resource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedConfigPath {
+    pub path: PathBuf,
+    pub source: ConfigPathSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigPathSource {
+    Explicit,
+    Default,
+    ExampleFallback,
+}
+
+pub fn resolve_config_path(explicit: Option<&Path>) -> Result<ResolvedConfigPath> {
+    resolve_config_path_in(Path::new("."), explicit)
+}
+
+pub fn resolve_config_path_in(root: &Path, explicit: Option<&Path>) -> Result<ResolvedConfigPath> {
+    if let Some(path) = explicit {
+        let candidate = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            root.join(path)
+        };
+        if candidate.exists() {
+            return Ok(ResolvedConfigPath {
+                path: path.to_path_buf(),
+                source: ConfigPathSource::Explicit,
+            });
+        }
+        bail!("config file not found: {}", path.display());
+    }
+
+    let default = root.join("vmctl.toml");
+    if default.exists() {
+        return Ok(ResolvedConfigPath {
+            path: PathBuf::from("vmctl.toml"),
+            source: ConfigPathSource::Default,
+        });
+    }
+
+    let example = root.join("vmctl.example.toml");
+    if example.exists() {
+        return Ok(ResolvedConfigPath {
+            path: PathBuf::from("vmctl.example.toml"),
+            source: ConfigPathSource::ExampleFallback,
+        });
+    }
+
+    bail!("config file not found: create vmctl.toml or pass --config <path>");
 }
 
 impl Config {
@@ -330,5 +383,47 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("cyclic interpolation"));
+    }
+
+    #[test]
+    fn resolves_default_config_before_example() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("vmctl.toml"), "").unwrap();
+        std::fs::write(root.join("vmctl.example.toml"), "").unwrap();
+
+        let resolved = resolve_config_path_in(&root, None).unwrap();
+
+        assert_eq!(resolved.path, PathBuf::from("vmctl.toml"));
+        assert_eq!(resolved.source, ConfigPathSource::Default);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn falls_back_to_example_config() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("vmctl.example.toml"), "").unwrap();
+
+        let resolved = resolve_config_path_in(&root, None).unwrap();
+
+        assert_eq!(resolved.path, PathBuf::from("vmctl.example.toml"));
+        assert_eq!(resolved.source, ConfigPathSource::ExampleFallback);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "vmctl-config-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        dir
     }
 }

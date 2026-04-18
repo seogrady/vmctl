@@ -14,6 +14,7 @@ cargo run -q -p vmctl -- --config vmctl.example.toml backend validate
 cargo run -q -p vmctl -- --config vmctl.example.toml backend validate --live
 cargo run -q -p vmctl -- --config vmctl.example.toml backend plan --dry-run
 cargo run -q -p vmctl -- --config vmctl.example.toml backend render
+cargo run -q -p vmctl -- --config vmctl.example.toml provision
 cargo run -q -p vmctl -- --config vmctl.example.toml backend show-state
 ```
 
@@ -24,8 +25,15 @@ rendering:
 export PROXMOX_TOKEN_ID=...
 export PROXMOX_TOKEN_SECRET=...
 export TAILSCALE_AUTH_KEY=...
+export DEFAULT_SSH_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+export DEFAULT_SSH_PRIVATE_KEY="$HOME/.ssh/id_ed25519"
 export TF_VAR_proxmox_api_token="${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
 ```
+
+By default the CLI loads `vmctl.toml`. If `vmctl.toml` is missing, it falls back
+to `vmctl.example.toml` so a fresh checkout can still validate and render. Use
+`--config <path>` for an explicit config file. `vmctl.example.toml` is a
+reference file; copy it to `vmctl.toml` for local overrides.
 
 Generated backend files are written to `backend/generated/workspace/`, and
 `vmctl.lock` is written at the workspace root.
@@ -46,6 +54,8 @@ Recommended workflow:
 7. `vmctl apply --auto-approve` renders the live workspace and runs
    `tofu apply` or `terraform apply`; this requires reachable Proxmox and
    `TF_VAR_proxmox_api_token`.
+8. `vmctl provision` uploads and executes pack-generated bootstrap scripts over
+   SSH using each resource's `[resources.provision]` settings.
 
 The current Terraform backend generates deterministic scaffold modules under
 `backend/generated/workspace/modules/` and maps each `vmctl` resource to a
@@ -67,22 +77,31 @@ workflow.
 Live operations require explicit approval at the `vmctl` layer. `vmctl apply`
 and `vmctl destroy` fail unless `--auto-approve` is supplied, and the live
 renderer checks for the Proxmox endpoint, node, VMID, bridge, storage, template,
-and VM clone VMID before it writes provider-backed artifacts.
+and VM clone VMID before it writes provider-backed artifacts. Dependency checks
+are command scoped: Terraform/OpenTofu is required only for Terraform commands
+that run the backend, while SSH/SCP are required only for provisioning.
+
+Provisioning is pack driven. Terraform creates VM/LXC resources and cloud-init
+handles first boot identity. Post-boot, `vmctl provision` uploads scripts from
+`backend/generated/workspace/resources/<name>/scripts/` and runs them with SSH.
+Provisioning supports retries, logs failed attempts, and uses generated scripts
+from role packs.
 
 ## Workspace crates
 
 The implementation follows the crate layout in `plans/vmctl-hybrid-plan-packs.md`:
 
 - `crates/cli/` owns clap parsing, command dispatch, and terminal output.
-- `crates/config/`, `crates/domain/`, `crates/planner/`, and `crates/packs/`
-  own config loading, backend-agnostic models, desired-state construction, and
-  pack expansion.
+- `crates/config/`, `crates/domain/`, `crates/planner/`, `crates/packs/`, and
+  `crates/dependencies/` own config loading, backend-agnostic models,
+  desired-state construction, pack expansion, and command-scoped dependency
+  checks.
 - `crates/backend/`, `crates/backend-terraform/`, and `crates/backend-native/`
   define the backend interface, the Terraform renderer, and the future native
   engine placeholder.
-- `crates/lockfile/`, `crates/import/`, `crates/render/`, and `crates/util/`
-  own lockfile persistence, import placeholders, human-facing rendering, and
-  shared helpers.
+- `crates/lockfile/`, `crates/import/`, `crates/provision/`, `crates/render/`,
+  and `crates/util/` own lockfile persistence, import/reconciliation,
+  SSH-based provisioning, human-facing rendering, and shared helpers.
 
 ## Pack layout
 
@@ -91,112 +110,3 @@ The implementation follows the crate layout in `plans/vmctl-hybrid-plan-packs.md
 - `packs/services/` contains service packs that can be referenced by role packs.
 - `packs/templates/` and `packs/scripts/` contain backend-independent render and
   bootstrap assets.
-
-## Legacy Proxmox scripts
-
-Reusable shell scripts for creating an Ubuntu cloud-init template and cloning a media VM from it on a Proxmox host.
-
-These scripts are intended to be run on the Proxmox host as root.
-
-## Included
-
-- `scripts/create-template.sh`
-- `scripts/create-media-vm.sh`
-- `scripts/add-media-disk.sh`
-- `scripts/add-igpu-passthrough.sh`
-
-## Recommended location on the Proxmox host
-
-```bash
-mkdir -p /root/scripts
-cd /root/scripts
-```
-
-## Quick start
-
-### 1. Unzip and make scripts executable
-
-```bash
-unzip proxmox-vm-scripts-repo.zip
-cd proxmox-vm-scripts-repo
-chmod +x scripts/*.sh
-```
-
-### 2. Create the Ubuntu cloud-init template
-
-Edit `scripts/create-template.sh` if needed, then run:
-
-```bash
-./scripts/create-template.sh
-```
-
-### 3. Create your media VM
-
-Edit `scripts/create-media-vm.sh`, then run:
-
-```bash
-./scripts/create-media-vm.sh
-```
-
-### 4. Optional: add a second disk
-
-```bash
-./scripts/add-media-disk.sh
-```
-
-### 5. Optional: add Intel iGPU passthrough
-
-```bash
-./scripts/add-igpu-passthrough.sh
-```
-
-## Typical defaults for a Jellyfin + Docker VM
-
-- Ubuntu Server 24.04 cloud image
-- 6 vCPU
-- 16 GB RAM
-- 64 GB OS disk
-- VirtIO NIC on `vmbr0`
-- optional second disk for media/downloads
-- optional Intel iGPU passthrough for `/dev/dri`
-
-## After the VM boots
-
-SSH into the guest and install Docker:
-
-```bash
-sudo apt update
-sudo apt install -y docker.io docker-compose-plugin
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-```
-
-Log out and back in after adding your user to the `docker` group.
-
-## Jellyfin hardware transcoding
-
-If passthrough works, inside the VM you should see:
-
-```bash
-ls /dev/dri
-```
-
-Expected:
-
-```text
-card0
-renderD128
-```
-
-Then your Jellyfin container can mount:
-
-```yaml
-devices:
-  - /dev/dri:/dev/dri
-```
-
-## Notes
-
-- These scripts assume your Proxmox host already has a working storage backend like `local-lvm` and a bridge like `vmbr0`.
-- `add-igpu-passthrough.sh` only adds the PCI device to the VM config. IOMMU and passthrough still need to be enabled on the Proxmox host.
-- These scripts are designed for VMs, not LXCs.

@@ -1,3 +1,5 @@
+# Copy to `vmctl.toml` for local overrides.
+
 [backend]
 kind = "terraform"
 
@@ -18,6 +20,15 @@ start_on_boot = true
 agent = true
 tags = ["vmctl", "homelab"]
 
+[defaults.cloud_init]
+ssh_key = "${DEFAULT_SSH_KEY}"
+
+[defaults.provision]
+user = "ubuntu"
+private_key = "${DEFAULT_SSH_PRIVATE_KEY}"
+retries = 20
+retry_delay_seconds = 15
+
 [const]
 bridge = "vmbr0"
 domain = "home.arpa"
@@ -28,6 +39,8 @@ default_tailnet_tag = "tag:homelab"
 PROXMOX_TOKEN_ID = "${PROXMOX_TOKEN_ID}"
 PROXMOX_TOKEN_SECRET = "${PROXMOX_TOKEN_SECRET}"
 TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
+DEFAULT_SSH_KEY = "${DEFAULT_SSH_KEY}"
+DEFAULT_SSH_PRIVATE_KEY = "${DEFAULT_SSH_PRIVATE_KEY}"
 
 [[resources]]
 name = "tailscale-gateway"
@@ -42,6 +55,9 @@ description = "Tailscale subnet router managed by vmctl"
 
 [resources.network]
 mode = "dhcp"
+
+[resources.provision]
+host = "tailscale-gateway.home.arpa"
 
 [resources.features.tailscale]
 enabled = true
@@ -68,7 +84,12 @@ mode = "dhcp"
 
 [resources.cloud_init]
 user = "ubuntu"
-ssh_key_file = "/root/.ssh/media_stack.pub"
+ssh_key = "${DEFAULT_SSH_KEY}"
+
+[resources.provision]
+host = "media-stack.home.arpa"
+user = "ubuntu"
+private_key = "${DEFAULT_SSH_PRIVATE_KEY}"
 
 [resources.features.docker]
 enabled = true

@@ -607,7 +607,7 @@ fn vm_resource_json() -> (String, Value) {
                             }],
                             "user_account": [{
                                 "username": "${try(var.resource.cloud_init.user, null)}",
-                                "keys": "${try(var.resource.cloud_init.ssh_key_file, null) == null ? [] : [file(var.resource.cloud_init.ssh_key_file)]}"
+                                "keys": "${try(var.resource.cloud_init.ssh_key, null) == null ? [] : [var.resource.cloud_init.ssh_key]}"
                             }],
                             "ip_config": [{
                                 "ipv4": [{
@@ -1081,6 +1081,14 @@ mod tests {
             (
                 "TAILSCALE_AUTH_KEY".to_string(),
                 "tskey-fixture".to_string(),
+            ),
+            (
+                "DEFAULT_SSH_KEY".to_string(),
+                "ssh-ed25519 fixture".to_string(),
+            ),
+            (
+                "DEFAULT_SSH_PRIVATE_KEY".to_string(),
+                "/home/me/.ssh/id_ed25519".to_string(),
             ),
         ]);
         let config = vmctl_config::Config::from_toml(raw, &env).unwrap();

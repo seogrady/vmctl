@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{bail, Result};
 use vmctl_config::Config;
-use vmctl_domain::{CloudInitConfig, DesiredState, NetworkConfig, NormalizedResource, Resource};
+use vmctl_domain::{
+    CloudInitConfig, DesiredState, NetworkConfig, NormalizedResource, ProvisionConfig, Resource,
+};
 use vmctl_packs::PackRegistry;
 
 pub fn build_desired_state(
@@ -30,6 +32,8 @@ pub fn build_desired_state(
         .map(|resource| (resource.name.clone(), normalize_resource(resource)))
         .collect::<BTreeMap<_, _>>();
 
+    validate_normalized_resources(&normalized_resources)?;
+
     Ok(DesiredState {
         backend: config.backend,
         resources,
@@ -43,22 +47,36 @@ fn apply_defaults(mut resource: Resource, defaults: &BTreeMap<String, toml::Valu
         if key == "vm" || key == "lxc" {
             continue;
         }
-        resource
-            .settings
-            .entry(key.clone())
-            .or_insert_with(|| value.clone());
+        insert_default_setting(&mut resource.settings, key, value);
     }
 
     if let Some(kind_defaults) = defaults.get(&resource.kind).and_then(toml::Value::as_table) {
         for (key, value) in kind_defaults {
-            resource
-                .settings
-                .entry(key.clone())
-                .or_insert_with(|| value.clone());
+            insert_default_setting(&mut resource.settings, key, value);
         }
     }
 
     resource
+}
+
+fn insert_default_setting(
+    settings: &mut BTreeMap<String, toml::Value>,
+    key: &str,
+    value: &toml::Value,
+) {
+    match (settings.get_mut(key), value) {
+        (Some(toml::Value::Table(existing)), toml::Value::Table(defaults)) => {
+            for (nested_key, nested_value) in defaults {
+                existing
+                    .entry(nested_key.clone())
+                    .or_insert_with(|| nested_value.clone());
+            }
+        }
+        (Some(_), _) => {}
+        (None, _) => {
+            settings.insert(key.to_string(), value.clone());
+        }
+    }
 }
 
 fn select_resources(resources: Vec<Resource>, target: Option<&str>) -> Result<Vec<Resource>> {
@@ -111,6 +129,7 @@ fn normalize_resource(resource: &Resource) -> NormalizedResource {
         os_type: string_setting(resource, "os_type"),
         network: network_config(resource),
         cloud_init: cloud_init_config(resource),
+        provision: provision_config(resource),
         features: resource.features.clone(),
     }
 }
@@ -192,11 +211,57 @@ fn cloud_init_config(resource: &Resource) -> Option<CloudInitConfig> {
             .get("user")
             .and_then(toml::Value::as_str)
             .map(str::to_string),
-        ssh_key_file: table
-            .get("ssh_key_file")
+        ssh_key: table
+            .get("ssh_key")
             .and_then(toml::Value::as_str)
             .map(str::to_string),
     })
+}
+
+fn provision_config(resource: &Resource) -> Option<ProvisionConfig> {
+    let table = resource.settings.get("provision")?.as_table()?;
+    Some(ProvisionConfig {
+        host: table
+            .get("host")
+            .and_then(toml::Value::as_str)
+            .map(str::to_string),
+        user: table
+            .get("user")
+            .and_then(toml::Value::as_str)
+            .map(str::to_string),
+        private_key: table
+            .get("private_key")
+            .and_then(toml::Value::as_str)
+            .map(str::to_string),
+        retries: table
+            .get("retries")
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u32::try_from(value).ok()),
+        retry_delay_seconds: table
+            .get("retry_delay_seconds")
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| u64::try_from(value).ok()),
+    })
+}
+
+fn validate_normalized_resources(resources: &BTreeMap<String, NormalizedResource>) -> Result<()> {
+    for resource in resources.values() {
+        if let Some(cloud_init) = &resource.cloud_init {
+            if cloud_init
+                .ssh_key
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+            {
+                bail!(
+                    "resource `{}` cloud_init requires ssh_key; set defaults.cloud_init.ssh_key or resources.cloud_init.ssh_key",
+                    resource.name
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_dependencies(resources: &[Resource]) -> Result<()> {
@@ -275,11 +340,25 @@ mod tests {
                 ("memory".to_string(), toml::Value::Integer(4096)),
             ])),
         );
+        defaults.insert(
+            "cloud_init".to_string(),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                "ssh_key".to_string(),
+                toml::Value::String("ssh-ed25519 default".to_string()),
+            )])),
+        );
 
         let mut input = resource("media-stack", "vm", vec![]);
         input
             .settings
             .insert("memory".to_string(), toml::Value::Integer(8192));
+        input.settings.insert(
+            "cloud_init".to_string(),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                "user".to_string(),
+                toml::Value::String("ubuntu".to_string()),
+            )])),
+        );
         input.settings.insert(
             "tags".to_string(),
             toml::Value::Array(vec![toml::Value::String("vmctl".to_string())]),
@@ -307,6 +386,24 @@ mod tests {
                 .get("memory")
                 .and_then(toml::Value::as_integer),
             Some(8192)
+        );
+        assert_eq!(
+            resolved
+                .settings
+                .get("cloud_init")
+                .and_then(toml::Value::as_table)
+                .and_then(|cloud_init| cloud_init.get("user"))
+                .and_then(toml::Value::as_str),
+            Some("ubuntu")
+        );
+        assert_eq!(
+            resolved
+                .settings
+                .get("cloud_init")
+                .and_then(toml::Value::as_table)
+                .and_then(|cloud_init| cloud_init.get("ssh_key"))
+                .and_then(toml::Value::as_str),
+            Some("ssh-ed25519 default")
         );
     }
 
@@ -362,6 +459,26 @@ mod tests {
         assert_eq!(network.vlan_id, Some(20));
         assert_eq!(network.mtu, Some(1500));
         assert_eq!(network.firewall, Some(true));
+    }
+
+    #[test]
+    fn rejects_cloud_init_without_ssh_key() {
+        let mut input = resource("media-stack", "vm", vec![]);
+        input.settings.insert(
+            "cloud_init".to_string(),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                "user".to_string(),
+                toml::Value::String("ubuntu".to_string()),
+            )])),
+        );
+
+        let err = validate_normalized_resources(&BTreeMap::from([(
+            input.name.clone(),
+            normalize_resource(&input),
+        )]))
+        .unwrap_err();
+
+        assert!(err.to_string().contains("cloud_init requires ssh_key"));
     }
 
     #[test]

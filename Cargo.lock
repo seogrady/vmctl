@@ -477,11 +477,13 @@ dependencies = [
  "vmctl-backend",
  "vmctl-backend-terraform",
  "vmctl-config",
+ "vmctl-dependencies",
  "vmctl-domain",
  "vmctl-import",
  "vmctl-lockfile",
  "vmctl-packs",
  "vmctl-planner",
+ "vmctl-provision",
  "vmctl-render",
 ]
 
@@ -529,6 +531,13 @@ dependencies = [
  "serde",
  "toml",
  "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-dependencies"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]
@@ -584,6 +593,14 @@ dependencies = [
  "vmctl-config",
  "vmctl-domain",
  "vmctl-packs",
+]
+
+[[package]]
+name = "vmctl-provision"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vmctl-domain",
 ]
 
 [[package]]

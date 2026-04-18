@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -71,6 +70,13 @@ impl Lockfile {
     pub fn read_from_path(path: &Path) -> Result<Self> {
         Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
     }
+
+    pub fn read_optional_from_path(path: &Path) -> Result<Option<Self>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        Self::read_from_path(path).map(Some)
+    }
 }
 
 fn locked_resource(resource: &Resource) -> Result<LockedResource> {
@@ -112,11 +118,7 @@ fn backend_address(resource: &Resource) -> String {
 }
 
 fn generated_at() -> String {
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or_default();
-    format!("unix:{seconds}")
+    "unix:0".to_string()
 }
 
 fn redacted_value(value: Value) -> Value {
@@ -211,6 +213,35 @@ mod tests {
         assert_ne!(
             locked_resource(&first).unwrap().digest,
             locked_resource(&second).unwrap().digest
+        );
+    }
+
+    #[test]
+    fn missing_lockfile_is_optional() {
+        let path = std::env::temp_dir().join(format!(
+            "vmctl-lockfile-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        assert!(Lockfile::read_optional_from_path(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn generated_at_is_deterministic() {
+        let desired = DesiredState {
+            backend: BackendConfig::default(),
+            resources: vec![],
+            normalized_resources: BTreeMap::new(),
+            expansions: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            Lockfile::from_desired(&desired).unwrap().generated_at,
+            "unix:0"
         );
     }
 }

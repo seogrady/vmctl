@@ -64,7 +64,7 @@
               ],
               "user_account": [
                 {
-                  "keys": "${try(var.resource.cloud_init.ssh_key_file, null) == null ? [] : [file(var.resource.cloud_init.ssh_key_file)]}",
+                  "keys": "${try(var.resource.cloud_init.ssh_key, null) == null ? [] : [var.resource.cloud_init.ssh_key]}",
                   "username": "${try(var.resource.cloud_init.user, null)}"
                 }
               ]

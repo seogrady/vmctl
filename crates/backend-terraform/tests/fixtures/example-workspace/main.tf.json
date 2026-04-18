@@ -15,7 +15,7 @@
         "bridge": "vmbr0",
         "clone_vmid": 9000,
         "cloud_init": {
-          "ssh_key_file": "/root/.ssh/media_stack.pub",
+          "ssh_key": "ssh-ed25519 fixture",
           "user": "ubuntu"
         },
         "cores": 6,
@@ -67,6 +67,13 @@
         },
         "node": null,
         "os_type": null,
+        "provision": {
+          "host": "media-stack.home.arpa",
+          "private_key": "/home/me/.ssh/id_ed25519",
+          "retries": 20,
+          "retry_delay_seconds": 15,
+          "user": "ubuntu"
+        },
         "role": "media_stack",
         "rootfs_gb": null,
         "searchdomain": "home.arpa",
@@ -91,7 +98,10 @@
         "agent": true,
         "bridge": "vmbr0",
         "clone_vmid": null,
-        "cloud_init": null,
+        "cloud_init": {
+          "ssh_key": "ssh-ed25519 fixture",
+          "user": null
+        },
         "cores": 1,
         "depends_on": [],
         "description": "Tailscale subnet router managed by vmctl",
@@ -124,6 +134,13 @@
         },
         "node": null,
         "os_type": null,
+        "provision": {
+          "host": "tailscale-gateway.home.arpa",
+          "private_key": "/home/me/.ssh/id_ed25519",
+          "retries": 20,
+          "retry_delay_seconds": 15,
+          "user": "ubuntu"
+        },
         "role": "tailscale_gateway",
         "rootfs_gb": 8,
         "searchdomain": "home.arpa",

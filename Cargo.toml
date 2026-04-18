@@ -20,10 +20,12 @@ vmctl-backend = { path = "crates/backend" }
 vmctl-backend-native = { path = "crates/backend-native" }
 vmctl-backend-terraform = { path = "crates/backend-terraform" }
 vmctl-config = { path = "crates/config" }
+vmctl-dependencies = { path = "crates/dependencies" }
 vmctl-domain = { path = "crates/domain" }
 vmctl-import = { path = "crates/import" }
 vmctl-lockfile = { path = "crates/lockfile" }
 vmctl-packs = { path = "crates/packs" }
 vmctl-planner = { path = "crates/planner" }
+vmctl-provision = { path = "crates/provision" }
 vmctl-render = { path = "crates/render" }
 vmctl-util = { path = "crates/util" }

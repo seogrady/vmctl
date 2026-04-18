@@ -9,10 +9,11 @@ clap.workspace = true
 vmctl-backend.workspace = true
 vmctl-backend-terraform.workspace = true
 vmctl-config.workspace = true
+vmctl-dependencies.workspace = true
 vmctl-domain.workspace = true
 vmctl-import.workspace = true
 vmctl-lockfile.workspace = true
 vmctl-packs.workspace = true
 vmctl-planner.workspace = true
+vmctl-provision.workspace = true
 vmctl-render.workspace = true
-
