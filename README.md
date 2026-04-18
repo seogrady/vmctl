@@ -7,6 +7,43 @@ and service packs, and deterministic backend artifact rendering.
 
 ## CLI quick start
 
+Install the host CLI from this checkout:
+
+```bash
+cargo install --path crates/cli --locked
+```
+
+Cargo installs the binary as `vmctl` in `~/.cargo/bin` by default. Ensure that
+directory is on your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+vmctl --help
+```
+
+To upgrade after pulling new changes, run the same install command again with
+`--force`:
+
+```bash
+cargo install --path crates/cli --locked --force
+```
+
+To remove the host binary:
+
+```bash
+cargo uninstall vmctl
+```
+
+After installation, run commands from a vmctl workspace that contains
+`vmctl.toml` or `vmctl.example.toml` and `packs/`:
+
+```bash
+vmctl --config vmctl.example.toml validate
+vmctl --config vmctl.example.toml plan
+```
+
+During development, you can still run the CLI directly through Cargo:
+
 ```bash
 cargo run -q -p vmctl -- --config vmctl.example.toml validate
 cargo run -q -p vmctl -- --config vmctl.example.toml plan

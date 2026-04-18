@@ -2,6 +2,12 @@
 name = "vmctl"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vmctl"
+path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
