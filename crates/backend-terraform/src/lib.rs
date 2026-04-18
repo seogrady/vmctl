@@ -64,10 +64,10 @@ impl EngineBackend for TerraformBackend {
             )?,
         };
         Ok(BackendPlan {
-            summary: output_summary(
+            summary: plan_output(
                 match mode {
-                    PlanMode::Online => "terraform plan",
-                    PlanMode::DryRun => "terraform dry-run plan",
+                    PlanMode::Online => "tofu plan",
+                    PlanMode::DryRun => "tofu dry-run plan",
                 },
                 &output,
             ),
@@ -813,12 +813,33 @@ fn output_summary(prefix: &str, output: &str) -> String {
     format!("{prefix}: {tail}")
 }
 
+fn plan_output(prefix: &str, output: &str) -> String {
+    let output = output.trim();
+    if output.is_empty() {
+        format!("{prefix}: completed")
+    } else {
+        format!("{prefix}:\n{output}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
     use vmctl_domain::{BackendConfig, DesiredState};
+
+    #[test]
+    fn plan_output_includes_full_plan_body() {
+        let output = plan_output(
+            "tofu dry-run plan",
+            "\nTerraform will perform the following actions:\n  # module.media_stack will be created\nPlan: 1 to add, 0 to change, 0 to destroy.\n",
+        );
+
+        assert!(output.starts_with("tofu dry-run plan:\n"));
+        assert!(output.contains("module.media_stack will be created"));
+        assert!(output.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
 
     #[test]
     fn renders_module_blocks_for_resources_and_dependencies() {

@@ -158,8 +158,10 @@ Recommended workflow:
 4. `vmctl backend validate --live` renders the provider-backed workspace and
    runs `tofu init` + `tofu validate` without planning or applying.
 5. `vmctl backend plan --dry-run` additionally runs `tofu plan -refresh=false`
-   without contacting Proxmox. It may still use network access to install
-   OpenTofu providers or modules if they are not already cached.
+   against a provider-free workspace without contacting Proxmox. This verifies
+   the generated OpenTofu graph and prints the plan body, but it is not a live
+   Proxmox change preview. It may still use network access to install OpenTofu
+   providers or modules if they are not already cached.
 6. `vmctl backend render` writes the live OpenTofu/Terraform workspace.
 7. `vmctl apply --auto-approve` renders the live workspace and runs
    `tofu apply` by default. If `tofu` is unavailable, `terraform` is accepted as
