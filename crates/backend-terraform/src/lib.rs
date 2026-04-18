@@ -568,7 +568,6 @@ fn vm_resource_json() -> (String, Value) {
                 "network_device": [{
                     "bridge": "${var.bridge}",
                     "disconnected": false,
-                    "enabled": true,
                     "firewall": "${try(var.resource.network.firewall, false)}",
                     "mac_address": "${try(var.resource.network.mac, null)}",
                     "model": "virtio",

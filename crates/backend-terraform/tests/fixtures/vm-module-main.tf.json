@@ -82,7 +82,6 @@
           {
             "bridge": "${var.bridge}",
             "disconnected": false,
-            "enabled": true,
             "firewall": "${try(var.resource.network.firewall, false)}",
             "mac_address": "${try(var.resource.network.mac, null)}",
             "model": "virtio",
