@@ -1,0 +1,13 @@
+name = "prowlarr"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/prowlarr"
+tag = "latest"
+
+[ports]
+published = ["9696:9696"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/prowlarr:/config"]
+

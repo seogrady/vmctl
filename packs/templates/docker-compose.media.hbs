@@ -1,0 +1,7 @@
+services:
+{{#each services}}
+  {{this}}:
+    image: "{{this}}"
+    restart: unless-stopped
+{{/each}}
+

@@ -1,0 +1,13 @@
+name = "homarr"
+container_type = "docker"
+
+[image]
+name = "ghcr.io/homarr-labs/homarr"
+tag = "latest"
+
+[ports]
+published = ["7575:7575"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/homarr:/appdata"]
+

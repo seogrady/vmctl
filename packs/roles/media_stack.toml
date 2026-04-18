@@ -1,0 +1,28 @@
+name = "media_stack"
+kind = "vm"
+
+[defaults]
+requires = ["docker"]
+
+[features.media_services]
+enabled = true
+minimal = true
+services = [
+  "jellyfin",
+  "sonarr",
+  "radarr",
+  "prowlarr",
+  "qbittorrent",
+  "jellyseerr",
+  "bazarr",
+  "homarr",
+  "jellystat-db",
+  "jellystat",
+]
+
+[render]
+templates = ["docker-compose.media.hbs", "media.env.hbs"]
+
+[scripts]
+bootstrap = ["bootstrap-media.sh"]
+

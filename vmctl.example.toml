@@ -1,0 +1,83 @@
+[backend]
+kind = "terraform"
+
+[backend.proxmox]
+endpoint = "https://mini:8006/api2/json"
+node = "mini"
+auth = "token"
+token_id = "${PROXMOX_TOKEN_ID}"
+token_secret = "${PROXMOX_TOKEN_SECRET}"
+tls_insecure = true
+
+[defaults]
+bridge = "${bridge}"
+storage = "local-lvm"
+nameserver = "1.1.1.1"
+searchdomain = "${domain}"
+start_on_boot = true
+agent = true
+
+[const]
+bridge = "vmbr0"
+domain = "home.arpa"
+tailscale_gateway = "tailscale-gateway"
+default_tailnet_tag = "tag:homelab"
+
+[env]
+PROXMOX_TOKEN_ID = "${PROXMOX_TOKEN_ID}"
+PROXMOX_TOKEN_SECRET = "${PROXMOX_TOKEN_SECRET}"
+TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
+
+[[resources]]
+name = "tailscale-gateway"
+kind = "lxc"
+role = "tailscale_gateway"
+vmid = 101
+template = "debian-12-standard_12.7-1_amd64.tar.zst"
+
+[resources.network]
+mode = "dhcp"
+
+[resources.features.tailscale]
+enabled = true
+mode = "router"
+auth_key = "${TAILSCALE_AUTH_KEY}"
+advertise_routes = ["192.168.86.0/24"]
+tags = ["${default_tailnet_tag}"]
+
+[[resources]]
+name = "media-stack"
+kind = "vm"
+role = "media_stack"
+vmid = 210
+template = "ubuntu-24-04-cloudinit-template"
+cores = 6
+memory = 16384
+disk_gb = 64
+depends_on = ["${tailscale_gateway}"]
+
+[resources.network]
+mode = "dhcp"
+
+[resources.cloud_init]
+user = "ubuntu"
+ssh_key_file = "/root/.ssh/media_stack.pub"
+
+[resources.features.docker]
+enabled = true
+
+[resources.features.tailscale]
+enabled = true
+mode = "client"
+auth_key = "${TAILSCALE_AUTH_KEY}"
+tags = ["${default_tailnet_tag}"]
+
+[resources.features.intel_igpu]
+enabled = true
+pci_device = "00:02.0"
+
+[resources.features.media_services]
+enabled = true
+minimal = true
+services = ["jellyfin", "sonarr", "radarr", "prowlarr", "qbittorrent"]
+

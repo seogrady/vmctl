@@ -1,0 +1,16 @@
+name = "tailscale_gateway"
+kind = "lxc"
+
+[defaults]
+requires = ["tailscale"]
+
+[features.tailscale]
+enabled = true
+mode = "router"
+
+[render]
+templates = ["tailscale-setup.sh.hbs"]
+
+[scripts]
+bootstrap = ["bootstrap-tailscale.sh"]
+

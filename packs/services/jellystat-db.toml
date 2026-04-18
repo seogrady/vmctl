@@ -1,0 +1,10 @@
+name = "jellystat-db"
+container_type = "docker"
+
+[image]
+name = "postgres"
+tag = "15-alpine"
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellystat-db:/var/lib/postgresql/data"]
+

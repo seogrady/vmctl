@@ -1,0 +1,13 @@
+name = "jellyfin"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/jellyfin"
+tag = "latest"
+
+[ports]
+published = ["8096:8096"]
+
+[volumes]
+mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/jellyfin:/config"]
+

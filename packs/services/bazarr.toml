@@ -1,0 +1,13 @@
+name = "bazarr"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/bazarr"
+tag = "latest"
+
+[ports]
+published = ["6767:6767"]
+
+[volumes]
+mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/bazarr:/config"]
+

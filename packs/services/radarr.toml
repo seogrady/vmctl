@@ -1,0 +1,13 @@
+name = "radarr"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/radarr"
+tag = "latest"
+
+[ports]
+published = ["7878:7878"]
+
+[volumes]
+mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/radarr:/config"]
+

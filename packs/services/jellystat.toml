@@ -1,0 +1,13 @@
+name = "jellystat"
+container_type = "docker"
+
+[image]
+name = "cyfershepard/jellystat"
+tag = "latest"
+
+[ports]
+published = ["3000:3000"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellystat:/app/backend/backup-data"]
+

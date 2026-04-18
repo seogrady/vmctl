@@ -5,7 +5,7 @@ set -euo pipefail
 TEMPLATE_ID=9000
 VMID=210
 NAME="media-stack"
-TARGET_NODE="mini"
+TARGET_NODE="$(hostname)"
 STORAGE="local-lvm"
 BRIDGE="vmbr0"
 
@@ -16,7 +16,10 @@ DISK_SIZE="64G"
 CIUSER="ubuntu"
 SSHKEY_FILE="/root/.ssh/media_stack.pub"
 
-IPCONFIG="ip=192.168.1.50/24,gw=192.168.1.1"
+# Preferred: use DHCP, then set a DHCP reservation in your router
+# for the VM MAC address shown in `qm config $VMID`
+IPCONFIG="ip=dhcp"
+
 NAMESERVER="1.1.1.1"
 SEARCHDOMAIN="home.arpa"
 # --- end edit ---
@@ -56,4 +59,11 @@ qm start "$VMID"
 echo "VM created and started:"
 echo "  VMID: $VMID"
 echo "  Name: $NAME"
-echo "  IP:   $IPCONFIG"
+echo "  Node: $TARGET_NODE"
+echo "  Network: DHCP"
+echo
+echo "Next steps:"
+echo "  1. Find the IP from your router/DHCP leases or install qemu-guest-agent in the VM."
+echo "  2. Set a DHCP reservation in your router for this VM's MAC address."
+echo "  3. SSH using:"
+echo "     ssh -i ${SSHKEY_FILE%.pub} ${CIUSER}@<vm-ip>"

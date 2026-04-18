@@ -1,4 +1,38 @@
-# Proxmox VM Bootstrap Scripts
+# vmctl
+
+`vmctl` is a Rust-first control plane for declarative Proxmox homelab resources.
+This repository now includes the initial hybrid architecture implementation from
+`plans/vmctl-hybrid-plan-packs.md`: a CLI, TOML interpolation, data-driven role
+and service packs, and deterministic backend artifact rendering.
+
+## CLI quick start
+
+```bash
+cargo run -q -- --config vmctl.example.toml validate
+cargo run -q -- --config vmctl.example.toml plan
+cargo run -q -- --config vmctl.example.toml backend render
+```
+
+The example config expects these environment variables when validating or
+rendering:
+
+```bash
+export PROXMOX_TOKEN_ID=...
+export PROXMOX_TOKEN_SECRET=...
+export TAILSCALE_AUTH_KEY=...
+```
+
+Generated backend files are written to `backend/generated/workspace/`.
+
+## Pack layout
+
+- `packs/roles/` contains declarative role packs such as `media_stack` and
+  `tailscale_gateway`.
+- `packs/services/` contains service packs that can be referenced by role packs.
+- `packs/templates/` and `packs/scripts/` contain backend-independent render and
+  bootstrap assets.
+
+## Legacy Proxmox scripts
 
 Reusable shell scripts for creating an Ubuntu cloud-init template and cloning a media VM from it on a Proxmox host.
 

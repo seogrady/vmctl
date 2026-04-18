@@ -1,0 +1,13 @@
+name = "jellyseerr"
+container_type = "docker"
+
+[image]
+name = "fallenbagel/jellyseerr"
+tag = "latest"
+
+[ports]
+published = ["5055:5055"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellyseerr:/app/config"]
+

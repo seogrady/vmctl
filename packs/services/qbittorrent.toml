@@ -1,0 +1,13 @@
+name = "qbittorrent"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/qbittorrent"
+tag = "latest"
+
+[ports]
+published = ["8080:8080", "6881:6881", "6881:6881/udp"]
+
+[volumes]
+mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/qbittorrent:/config"]
+

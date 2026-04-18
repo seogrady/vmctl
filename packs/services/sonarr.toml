@@ -1,0 +1,13 @@
+name = "sonarr"
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/sonarr"
+tag = "latest"
+
+[ports]
+published = ["8989:8989"]
+
+[volumes]
+mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/sonarr:/config"]
+
