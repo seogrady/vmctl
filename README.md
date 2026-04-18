@@ -75,6 +75,29 @@ Create a Proxmox API token in the Proxmox web UI:
 4. Enter a token ID such as `vmctl`.
 5. Save the token secret when Proxmox shows it. The secret is shown only once.
 
+You can also create a token from a Proxmox node shell with `pveum`:
+
+```bash
+pveum user token add root@pam vmctl --privsep 0
+```
+
+That command creates the token `root@pam!vmctl`. The command output includes a
+secret value; save it immediately because Proxmox only shows token secrets when
+they are created.
+
+For a dedicated user, create the user, grant it appropriate permissions, then
+create a token for that user:
+
+```bash
+pveum user add vmctl@pve --comment "vmctl automation"
+pveum aclmod / -user vmctl@pve -role Administrator
+pveum user token add vmctl@pve automation --privsep 0
+```
+
+This creates the token `vmctl@pve!automation`. `--privsep 0` means the token
+inherits the user's permissions. If you use privilege-separated tokens, grant
+permissions to the token itself according to your Proxmox policy.
+
 `PROXMOX_TOKEN_ID` uses this format:
 
 ```text
