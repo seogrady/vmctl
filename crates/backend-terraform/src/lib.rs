@@ -637,8 +637,7 @@ fn lxc_resource_json() -> (String, Value) {
                 "tags": "${try(var.resource.tags, [])}",
                 "unprivileged": true,
                 "features": [{
-                    "keyctl": true,
-                    "nesting": "${try(var.resource.features.docker.enabled, false) || try(var.resource.features.tailscale.enabled, false)}"
+                    "nesting": "${try(var.resource.features.lxc.nesting, false)}"
                 }],
                 "memory": [{
                     "dedicated": "${try(var.resource.memory, 1024)}"

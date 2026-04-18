@@ -17,8 +17,7 @@
         ],
         "features": [
           {
-            "keyctl": true,
-            "nesting": "${try(var.resource.features.docker.enabled, false) || try(var.resource.features.tailscale.enabled, false)}"
+            "nesting": "${try(var.resource.features.lxc.nesting, false)}"
           }
         ],
         "initialization": [

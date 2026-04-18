@@ -184,6 +184,18 @@ variable.
 `vmctl.lock` stores resource digests and generated artifact digests, excluding
 secret-valued fields from resource digests.
 
+LXC feature flags are explicit because Proxmox restricts most container feature
+changes to `root@pam`. The example enables only nesting for the Tailscale
+gateway:
+
+```toml
+[resources.features.lxc]
+nesting = true
+```
+
+Do not enable other LXC feature flags unless the Proxmox user/token has the
+required privilege for that operation.
+
 Current deployment assumption: `vmctl apply` runs on the local machine that
 invokes the CLI and talks directly to the configured Proxmox API endpoint. The
 generated OpenTofu/Terraform workspace is also useful for inspection or manual

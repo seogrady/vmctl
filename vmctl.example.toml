@@ -59,6 +59,9 @@ mode = "dhcp"
 [resources.provision]
 host = "tailscale-gateway.home.arpa"
 
+[resources.features.lxc]
+nesting = true
+
 [resources.features.tailscale]
 enabled = true
 mode = "router"

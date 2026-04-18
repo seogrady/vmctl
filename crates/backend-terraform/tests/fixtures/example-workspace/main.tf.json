@@ -107,6 +107,9 @@
         "description": "Tailscale subnet router managed by vmctl",
         "disk_gb": null,
         "features": {
+          "lxc": {
+            "nesting": true
+          },
           "tailscale": {
             "advertise_routes": [
               "192.168.86.0/24"
