@@ -501,7 +501,7 @@ mac = "BC:24:11:B7:5E:27"
 
 [resources.cloud_init]
 user = "ubuntu"
-ssh_key = "${DEFAULT_SSH_KEY}"
+ssh_key_file = "${DEFAULT_SSH_KEY_FILE}"
 
 [resources.features.docker]
 enabled = true

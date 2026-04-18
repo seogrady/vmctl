@@ -15,7 +15,7 @@
         "bridge": "vmbr0",
         "clone_vmid": 9000,
         "cloud_init": {
-          "ssh_key": "ssh-ed25519 fixture",
+          "ssh_key_file": "/home/me/.ssh/id_ed25519.pub",
           "user": "ubuntu"
         },
         "cores": 6,
@@ -69,7 +69,6 @@
         "os_type": null,
         "provision": {
           "host": "media-stack.home.arpa",
-          "private_key": "<redacted>",
           "private_key_file": "<redacted>",
           "retries": 20,
           "retry_delay_seconds": 15,
@@ -100,7 +99,7 @@
         "bridge": "vmbr0",
         "clone_vmid": null,
         "cloud_init": {
-          "ssh_key": "ssh-ed25519 fixture",
+          "ssh_key_file": "/home/me/.ssh/id_ed25519.pub",
           "user": null
         },
         "cores": 1,
@@ -137,7 +136,6 @@
         "os_type": null,
         "provision": {
           "host": "tailscale-gateway.home.arpa",
-          "private_key": "<redacted>",
           "private_key_file": "<redacted>",
           "retries": 20,
           "retry_delay_seconds": 15,

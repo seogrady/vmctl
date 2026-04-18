@@ -211,10 +211,10 @@ fn cloud_init_config(resource: &Resource) -> Option<CloudInitConfig> {
             .get("user")
             .and_then(toml::Value::as_str)
             .map(str::to_string),
-        ssh_key: table
-            .get("ssh_key")
+        ssh_key_file: table
+            .get("ssh_key_file")
             .and_then(toml::Value::as_str)
-            .map(resolve_optional_key_material),
+            .map(str::to_string),
     })
 }
 
@@ -229,14 +229,10 @@ fn provision_config(resource: &Resource) -> Option<ProvisionConfig> {
             .get("user")
             .and_then(toml::Value::as_str)
             .map(str::to_string),
-        private_key: table
-            .get("private_key")
-            .and_then(toml::Value::as_str)
-            .map(resolve_optional_key_material),
         private_key_file: table
-            .get("private_key")
+            .get("private_key_file")
             .and_then(toml::Value::as_str)
-            .map(resolve_private_key_file),
+            .map(str::to_string),
         retries: table
             .get("retries")
             .and_then(toml::Value::as_integer)
@@ -252,43 +248,20 @@ fn validate_normalized_resources(resources: &BTreeMap<String, NormalizedResource
     for resource in resources.values() {
         if let Some(cloud_init) = &resource.cloud_init {
             if cloud_init
-                .ssh_key
+                .ssh_key_file
                 .as_deref()
                 .unwrap_or_default()
                 .trim()
                 .is_empty()
             {
                 bail!(
-                    "resource `{}` cloud_init requires ssh_key; set defaults.cloud_init.ssh_key or resources.cloud_init.ssh_key",
+                    "resource `{}` cloud_init requires ssh_key_file; set defaults.cloud_init.ssh_key_file or resources.cloud_init.ssh_key_file",
                     resource.name
                 );
             }
         }
     }
     Ok(())
-}
-
-fn resolve_optional_key_material(value: &str) -> String {
-    read_key_file(value).unwrap_or_else(|| value.to_string())
-}
-
-fn resolve_private_key_file(value: &str) -> String {
-    if std::path::Path::new(value).exists() {
-        value.to_string()
-    } else {
-        String::new()
-    }
-}
-
-fn read_key_file(value: &str) -> Option<String> {
-    let path = std::path::Path::new(value);
-    if !path.exists() || !path.is_file() {
-        return None;
-    }
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|key| key.trim().to_string())
-        .filter(|key| !key.is_empty())
 }
 
 fn validate_dependencies(resources: &[Resource]) -> Result<()> {
@@ -370,8 +343,8 @@ mod tests {
         defaults.insert(
             "cloud_init".to_string(),
             toml::Value::Table(toml::map::Map::from_iter([(
-                "ssh_key".to_string(),
-                toml::Value::String("ssh-ed25519 default".to_string()),
+                "ssh_key_file".to_string(),
+                toml::Value::String("/home/me/.ssh/id_ed25519.pub".to_string()),
             )])),
         );
 
@@ -428,9 +401,9 @@ mod tests {
                 .settings
                 .get("cloud_init")
                 .and_then(toml::Value::as_table)
-                .and_then(|cloud_init| cloud_init.get("ssh_key"))
+                .and_then(|cloud_init| cloud_init.get("ssh_key_file"))
                 .and_then(toml::Value::as_str),
-            Some("ssh-ed25519 default")
+            Some("/home/me/.ssh/id_ed25519.pub")
         );
     }
 
@@ -489,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_cloud_init_without_ssh_key() {
+    fn rejects_cloud_init_without_ssh_key_file() {
         let mut input = resource("media-stack", "vm", vec![]);
         input.settings.insert(
             "cloud_init".to_string(),
@@ -505,87 +478,55 @@ mod tests {
         )]))
         .unwrap_err();
 
-        assert!(err.to_string().contains("cloud_init requires ssh_key"));
+        assert!(err.to_string().contains("cloud_init requires ssh_key_file"));
     }
 
     #[test]
-    fn cloud_init_ssh_key_accepts_file_path_or_inline_key() {
+    fn cloud_init_ssh_key_file_is_preserved_as_path() {
         let root = unique_temp_dir();
         std::fs::create_dir_all(&root).unwrap();
         let key_path = root.join("id_ed25519.pub");
         std::fs::write(&key_path, "ssh-ed25519 from-file\n").unwrap();
-        let mut from_file = resource("from-file", "vm", vec![]);
-        from_file.settings.insert(
+        let mut input = resource("from-file", "vm", vec![]);
+        input.settings.insert(
             "cloud_init".to_string(),
             toml::Value::Table(toml::map::Map::from_iter([(
-                "ssh_key".to_string(),
+                "ssh_key_file".to_string(),
                 toml::Value::String(key_path.to_string_lossy().to_string()),
-            )])),
-        );
-        let mut inline = resource("inline", "vm", vec![]);
-        inline.settings.insert(
-            "cloud_init".to_string(),
-            toml::Value::Table(toml::map::Map::from_iter([(
-                "ssh_key".to_string(),
-                toml::Value::String("ssh-ed25519 inline".to_string()),
             )])),
         );
 
         assert_eq!(
-            normalize_resource(&from_file)
+            normalize_resource(&input)
                 .cloud_init
-                .and_then(|cloud_init| cloud_init.ssh_key),
-            Some("ssh-ed25519 from-file".to_string())
-        );
-        assert_eq!(
-            normalize_resource(&inline)
-                .cloud_init
-                .and_then(|cloud_init| cloud_init.ssh_key),
-            Some("ssh-ed25519 inline".to_string())
+                .and_then(|cloud_init| cloud_init.ssh_key_file),
+            Some(key_path.to_string_lossy().to_string())
         );
 
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn provision_private_key_accepts_file_path_or_inline_key() {
+    fn provision_private_key_file_is_preserved_as_path() {
         let root = unique_temp_dir();
         std::fs::create_dir_all(&root).unwrap();
         let key_path = root.join("id_ed25519");
         std::fs::write(&key_path, "PRIVATE KEY FROM FILE\n").unwrap();
-        let mut from_file = resource("from-file", "vm", vec![]);
-        from_file.settings.insert(
+        let mut input = resource("from-file", "vm", vec![]);
+        input.settings.insert(
             "provision".to_string(),
             toml::Value::Table(toml::map::Map::from_iter([(
-                "private_key".to_string(),
+                "private_key_file".to_string(),
                 toml::Value::String(key_path.to_string_lossy().to_string()),
             )])),
         );
-        let mut inline = resource("inline", "vm", vec![]);
-        inline.settings.insert(
-            "provision".to_string(),
-            toml::Value::Table(toml::map::Map::from_iter([(
-                "private_key".to_string(),
-                toml::Value::String("-----BEGIN OPENSSH PRIVATE KEY-----\ninline".to_string()),
-            )])),
-        );
 
-        let from_file = normalize_resource(&from_file).provision.unwrap();
-        let inline = normalize_resource(&inline).provision.unwrap();
+        let provision = normalize_resource(&input).provision.unwrap();
 
         assert_eq!(
-            from_file.private_key,
-            Some("PRIVATE KEY FROM FILE".to_string())
-        );
-        assert_eq!(
-            from_file.private_key_file,
+            provision.private_key_file,
             Some(key_path.to_string_lossy().to_string())
         );
-        assert_eq!(
-            inline.private_key,
-            Some("-----BEGIN OPENSSH PRIVATE KEY-----\ninline".to_string())
-        );
-        assert_eq!(inline.private_key_file, Some(String::new()));
 
         std::fs::remove_dir_all(root).unwrap();
     }

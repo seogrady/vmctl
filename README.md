@@ -25,15 +25,14 @@ rendering:
 export PROXMOX_TOKEN_ID=...
 export PROXMOX_TOKEN_SECRET=...
 export TAILSCALE_AUTH_KEY=...
-export DEFAULT_SSH_KEY="$(cat ~/.ssh/id_ed25519.pub)"
-export DEFAULT_SSH_PRIVATE_KEY="$HOME/.ssh/id_ed25519"
+export DEFAULT_SSH_KEY_FILE="$HOME/.ssh/id_ed25519.pub"
+export DEFAULT_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/id_ed25519"
 export TF_VAR_proxmox_api_token="${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}"
 ```
 
-`DEFAULT_SSH_KEY` may be either an inline public key or a path to a public key
-file. `DEFAULT_SSH_PRIVATE_KEY` may be either a private key file path or inline
-private key material; inline private keys are written to a generated `0600` key
-file before SSH provisioning runs.
+SSH key settings are file paths only. Public keys use `ssh_key_file`, private
+keys use `private_key_file`, and the `_file` suffix is intentional so config
+readers can tell the value is a path rather than inline key material.
 
 By default the CLI loads `vmctl.toml`. If `vmctl.toml` is missing, it falls back
 to `vmctl.example.toml` so a fresh checkout can still validate and render. Use

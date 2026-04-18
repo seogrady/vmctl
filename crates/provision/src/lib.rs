@@ -14,7 +14,7 @@ pub struct ProvisionStep {
     pub resource: String,
     pub host: String,
     pub user: String,
-    pub private_key: String,
+    pub private_key_file: String,
     pub local_script: PathBuf,
     pub remote_script: String,
     pub retries: u32,
@@ -40,7 +40,7 @@ impl SshExecutor for SystemSshExecutor {
         let status = std::process::Command::new("scp")
             .args([
                 "-i",
-                &step.private_key,
+                &step.private_key_file,
                 "-o",
                 "BatchMode=yes",
                 "-o",
@@ -62,7 +62,7 @@ impl SshExecutor for SystemSshExecutor {
         let status = std::process::Command::new("ssh")
             .args([
                 "-i",
-                &step.private_key,
+                &step.private_key_file,
                 "-o",
                 "BatchMode=yes",
                 "-o",
@@ -142,17 +142,16 @@ fn resource_steps(
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .with_context(|| format!("resource `{}` provision.user is required", resource.name))?;
-    let _private_key = provision
-        .private_key
+    let private_key_file = provision
+        .private_key_file
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .with_context(|| {
             format!(
-                "resource `{}` provision.private_key is required",
+                "resource `{}` provision.private_key_file is required",
                 resource.name
             )
         })?;
-    let private_key_file = private_key_file(workspace, resource, normalized)?;
     let retries = provision.retries.unwrap_or(20);
     let retry_delay = Duration::from_secs(provision.retry_delay_seconds.unwrap_or(15));
 
@@ -169,7 +168,7 @@ fn resource_steps(
             resource: resource.name.clone(),
             host: host.to_string(),
             user: user.to_string(),
-            private_key: private_key_file.to_string_lossy().to_string(),
+            private_key_file: private_key_file.to_string(),
             remote_script: format!("/tmp/vmctl-{}-{script}", resource.name),
             local_script,
             retries,
@@ -177,67 +176,6 @@ fn resource_steps(
         });
     }
     Ok(steps)
-}
-
-fn private_key_file(
-    workspace: &Workspace,
-    resource: &Resource,
-    normalized: &NormalizedResource,
-) -> Result<PathBuf> {
-    let provision = normalized.provision.as_ref().unwrap();
-    if let Some(path) = provision
-        .private_key_file
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        return Ok(PathBuf::from(path));
-    }
-
-    let key_material = provision
-        .private_key
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .with_context(|| {
-            format!(
-                "resource `{}` provision.private_key is required",
-                resource.name
-            )
-        })?;
-    let key_dir = workspace
-        .root
-        .join(&workspace.generated_dir)
-        .join(".vmctl")
-        .join("ssh");
-    std::fs::create_dir_all(&key_dir)
-        .with_context(|| format!("failed to create {}", key_dir.display()))?;
-    let key_path = key_dir.join(format!("{}.key", resource.name));
-    std::fs::write(&key_path, ensure_trailing_newline(key_material))
-        .with_context(|| format!("failed to write {}", key_path.display()))?;
-    set_private_key_permissions(&key_path)?;
-    Ok(key_path)
-}
-
-fn ensure_trailing_newline(value: &str) -> String {
-    if value.ends_with('\n') {
-        value.to_string()
-    } else {
-        format!("{value}\n")
-    }
-}
-
-#[cfg(unix)]
-fn set_private_key_permissions(path: &PathBuf) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = std::fs::metadata(path)?.permissions();
-    permissions.set_mode(0o600);
-    std::fs::set_permissions(path, permissions)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn set_private_key_permissions(_path: &PathBuf) -> Result<()> {
-    Ok(())
 }
 
 fn run_with_retries(step: &ProvisionStep, mut action: impl FnMut() -> Result<()>) -> Result<()> {
@@ -293,7 +231,6 @@ mod tests {
                     provision: Some(ProvisionConfig {
                         host: Some("media-stack.home.arpa".to_string()),
                         user: Some("ubuntu".to_string()),
-                        private_key: Some("/home/me/.ssh/id_ed25519".to_string()),
                         private_key_file: Some("/home/me/.ssh/id_ed25519".to_string()),
                         retries: Some(3),
                         retry_delay_seconds: Some(1),
@@ -351,7 +288,7 @@ mod tests {
                 resource: "media-stack".to_string(),
                 host: "media-stack.home.arpa".to_string(),
                 user: "ubuntu".to_string(),
-                private_key: "/home/me/.ssh/id_ed25519".to_string(),
+                private_key_file: "/home/me/.ssh/id_ed25519".to_string(),
                 local_script: PathBuf::from("bootstrap-media.sh"),
                 remote_script: "/tmp/bootstrap-media.sh".to_string(),
                 retries: 1,
@@ -369,59 +306,5 @@ mod tests {
                 "execute:media-stack".to_string()
             ]
         );
-    }
-
-    #[test]
-    fn inline_private_key_is_written_to_generated_key_file() {
-        let root = unique_temp_dir();
-        std::fs::create_dir_all(&root).unwrap();
-        let workspace = Workspace {
-            root: root.clone(),
-            generated_dir: PathBuf::from("generated"),
-        };
-        let resource = Resource {
-            name: "media-stack".to_string(),
-            kind: "vm".to_string(),
-            role: None,
-            vmid: Some(210),
-            depends_on: Vec::new(),
-            features: BTreeMap::new(),
-            settings: BTreeMap::new(),
-        };
-        let normalized = NormalizedResource {
-            name: "media-stack".to_string(),
-            provision: Some(ProvisionConfig {
-                host: Some("media-stack.home.arpa".to_string()),
-                user: Some("ubuntu".to_string()),
-                private_key: Some("PRIVATE KEY MATERIAL".to_string()),
-                private_key_file: Some(String::new()),
-                retries: None,
-                retry_delay_seconds: None,
-            }),
-            ..NormalizedResource::default()
-        };
-
-        let path = private_key_file(&workspace, &resource, &normalized).unwrap();
-
-        assert_eq!(path, root.join("generated/.vmctl/ssh/media-stack.key"));
-        assert_eq!(
-            std::fs::read_to_string(path).unwrap(),
-            "PRIVATE KEY MATERIAL\n"
-        );
-
-        std::fs::remove_dir_all(root).unwrap();
-    }
-
-    fn unique_temp_dir() -> PathBuf {
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "vmctl-provision-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        dir
     }
 }

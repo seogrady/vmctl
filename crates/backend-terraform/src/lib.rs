@@ -607,7 +607,7 @@ fn vm_resource_json() -> (String, Value) {
                             }],
                             "user_account": [{
                                 "username": "${try(var.resource.cloud_init.user, null)}",
-                                "keys": "${try(var.resource.cloud_init.ssh_key, null) == null ? [] : [var.resource.cloud_init.ssh_key]}"
+                                "keys": "${try(var.resource.cloud_init.ssh_key_file, null) == null ? [] : [file(var.resource.cloud_init.ssh_key_file)]}"
                             }],
                             "ip_config": [{
                                 "ipv4": [{
@@ -1086,11 +1086,11 @@ mod tests {
                 "tskey-fixture".to_string(),
             ),
             (
-                "DEFAULT_SSH_KEY".to_string(),
-                "ssh-ed25519 fixture".to_string(),
+                "DEFAULT_SSH_KEY_FILE".to_string(),
+                "/home/me/.ssh/id_ed25519.pub".to_string(),
             ),
             (
-                "DEFAULT_SSH_PRIVATE_KEY".to_string(),
+                "DEFAULT_SSH_PRIVATE_KEY_FILE".to_string(),
                 "/home/me/.ssh/id_ed25519".to_string(),
             ),
         ]);

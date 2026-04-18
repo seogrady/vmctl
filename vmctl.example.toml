@@ -21,11 +21,11 @@ agent = true
 tags = ["vmctl", "homelab"]
 
 [defaults.cloud_init]
-ssh_key = "${DEFAULT_SSH_KEY}"
+ssh_key_file = "${DEFAULT_SSH_KEY_FILE}"
 
 [defaults.provision]
 user = "ubuntu"
-private_key = "${DEFAULT_SSH_PRIVATE_KEY}"
+private_key_file = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
 retries = 20
 retry_delay_seconds = 15
 
@@ -39,8 +39,8 @@ default_tailnet_tag = "tag:homelab"
 PROXMOX_TOKEN_ID = "${PROXMOX_TOKEN_ID}"
 PROXMOX_TOKEN_SECRET = "${PROXMOX_TOKEN_SECRET}"
 TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
-DEFAULT_SSH_KEY = "${DEFAULT_SSH_KEY}"
-DEFAULT_SSH_PRIVATE_KEY = "${DEFAULT_SSH_PRIVATE_KEY}"
+DEFAULT_SSH_KEY_FILE = "${DEFAULT_SSH_KEY_FILE}"
+DEFAULT_SSH_PRIVATE_KEY_FILE = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
 
 [[resources]]
 name = "tailscale-gateway"
@@ -84,12 +84,12 @@ mode = "dhcp"
 
 [resources.cloud_init]
 user = "ubuntu"
-ssh_key = "${DEFAULT_SSH_KEY}"
+ssh_key_file = "${DEFAULT_SSH_KEY_FILE}"
 
 [resources.provision]
 host = "media-stack.home.arpa"
 user = "ubuntu"
-private_key = "${DEFAULT_SSH_PRIVATE_KEY}"
+private_key_file = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
 
 [resources.features.docker]
 enabled = true
