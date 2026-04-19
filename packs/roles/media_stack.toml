@@ -21,8 +21,7 @@ services = [
 ]
 
 [render]
-templates = ["docker-compose.media.hbs", "media.env.hbs"]
+templates = ["docker-compose.media.hbs", "media.env.hbs", "tailscale-setup.sh.hbs"]
 
 [scripts]
-bootstrap = ["bootstrap-media.sh"]
-
+bootstrap = ["bootstrap-tailscale.sh", "bootstrap-media.sh"]

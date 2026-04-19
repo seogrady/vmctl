@@ -8,8 +8,7 @@ if [[ "$VMCTL_TAILSCALE_ENABLED" != "1" ]]; then
 fi
 
 args=(--auth-key "tskey-fixture")
-args+=(--hostname "tailscale-gateway")
-args+=(--advertise-routes "192.168.86.0/24")
+args+=(--hostname "media")
 args+=(--advertise-tags "tag:homelab")
 
 tailscale up "${args[@]}"

@@ -52,6 +52,7 @@
             ]
           }
         },
+        "hostname": "media",
         "image": "ubuntu_24_cloudinit_template",
         "kind": "vm",
         "memory": 16384,
@@ -69,7 +70,7 @@
         "node": null,
         "os_type": null,
         "provision": {
-          "host": "media-stack.home.arpa",
+          "host": "media.home.arpa",
           "private_key_file": "<redacted>",
           "retries": 20,
           "retry_delay_seconds": 15,
@@ -117,12 +118,14 @@
             ],
             "auth_key": "<redacted>",
             "enabled": true,
+            "exit_node": false,
             "mode": "router",
             "tags": [
               "tag:homelab"
             ]
           }
         },
+        "hostname": "tailscale-gateway",
         "image": "debian_12_lxc",
         "kind": "lxc",
         "memory": 1024,

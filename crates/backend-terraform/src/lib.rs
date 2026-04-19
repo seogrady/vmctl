@@ -744,7 +744,7 @@ fn lxc_resource_json() -> (String, Value) {
                     "cores": "${try(var.resource.cores, 1)}"
                 }],
                 "initialization": [{
-                    "hostname": "${var.resource.name}",
+                    "hostname": "${try(var.resource.hostname, var.resource.name)}",
                     "dns": [{
                         "domain": "${try(var.resource.searchdomain, null)}",
                         "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
@@ -1326,6 +1326,22 @@ mod tests {
             include_str!(
                 "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
             ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/scripts/bootstrap-tailscale.sh"),
+            include_str!(
+                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-tailscale.sh"
+            ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/tailscale-setup.sh"),
+            include_str!(
+                "../tests/fixtures/example-workspace/resources/media-stack/tailscale-setup.sh"
+            ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"),
+            include_str!("../tests/fixtures/example-workspace/resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"),
         );
         assert_file_fixture(
             &root.join("generated/resources/tailscale-gateway/tailscale-setup.sh"),

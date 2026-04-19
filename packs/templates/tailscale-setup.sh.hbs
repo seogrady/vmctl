@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
-tailscale up --auth-key "{{auth_key}}"
 
+VMCTL_TAILSCALE_ENABLED={{#if tailscale.enabled}}1{{else}}0{{/if}}
+if [[ "$VMCTL_TAILSCALE_ENABLED" != "1" ]]; then
+  echo "tailscale disabled for this resource"
+  exit 0
+fi
+
+args=(--auth-key "{{tailscale.auth_key}}")
+{{#if tailscale.hostname}}
+args+=(--hostname "{{tailscale.hostname}}")
+{{/if}}
+{{#if tailscale.advertise_routes}}
+args+=(--advertise-routes "{{tailscale.advertise_routes}}")
+{{/if}}
+{{#if tailscale.advertise_exit_node}}
+args+=(--advertise-exit-node)
+{{/if}}
+{{#if tailscale.accept_routes}}
+args+=(--accept-routes)
+{{/if}}
+{{#if tailscale.tags}}
+args+=(--advertise-tags "{{tailscale.tags}}")
+{{/if}}
+
+tailscale up "${args[@]}"

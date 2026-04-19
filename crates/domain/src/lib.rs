@@ -59,6 +59,7 @@ pub struct NormalizedResource {
     pub agent: Option<bool>,
     pub nameserver: Option<String>,
     pub searchdomain: Option<String>,
+    pub hostname: Option<String>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub os_type: Option<String>,

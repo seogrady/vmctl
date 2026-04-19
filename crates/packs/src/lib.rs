@@ -284,6 +284,7 @@ fn render_context(
         "services": expansion.service_defs,
         "service_packs": service_packs,
         "auth_key": tailscale_auth_key(resource),
+        "tailscale": tailscale_context(resource),
     }))
 }
 
@@ -295,6 +296,49 @@ fn tailscale_auth_key(resource: &Resource) -> Option<String> {
         .and_then(|tailscale| tailscale.get("auth_key"))
         .and_then(Value::as_str)
         .map(str::to_string)
+}
+
+fn tailscale_context(resource: &Resource) -> serde_json::Value {
+    let tailscale = resource.features.get("tailscale").and_then(Value::as_table);
+    let hostname = match resource.settings.get("hostname") {
+        Some(Value::String(hostname)) => Some(hostname.clone()),
+        Some(Value::Boolean(true)) => Some(resource.name.clone()),
+        Some(Value::Boolean(false)) => None,
+        _ if resource
+            .settings
+            .get("hostnames")
+            .and_then(Value::as_bool)
+            .unwrap_or(false) =>
+        {
+            Some(resource.name.clone())
+        }
+        _ => None,
+    };
+
+    serde_json::json!({
+        "auth_key": tailscale_auth_key(resource),
+        "enabled": tailscale
+            .and_then(|tailscale| tailscale.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "hostname": hostname,
+        "advertise_routes": tailscale
+            .and_then(|tailscale| tailscale.get("advertise_routes"))
+            .and_then(Value::as_array)
+            .map(|routes| routes.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(",")),
+        "advertise_exit_node": tailscale
+            .and_then(|tailscale| tailscale.get("exit_node"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "accept_routes": tailscale
+            .and_then(|tailscale| tailscale.get("accept_routes"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        "tags": tailscale
+            .and_then(|tailscale| tailscale.get("tags"))
+            .and_then(Value::as_array)
+            .map(|tags| tags.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(",")),
+    })
 }
 
 fn service_names_for_resource(role: &RolePack, resource: &Resource) -> Vec<String> {

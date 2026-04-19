@@ -28,7 +28,7 @@
                 "servers": "${compact(split(\",\", replace(try(var.resource.nameserver, \"\"), \" \", \"\")))}"
               }
             ],
-            "hostname": "${var.resource.name}",
+            "hostname": "${try(var.resource.hostname, var.resource.name)}",
             "ip_config": [
               {
                 "ipv4": [
