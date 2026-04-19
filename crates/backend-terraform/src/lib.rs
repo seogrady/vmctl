@@ -23,6 +23,25 @@ impl TerraformBackend {
     ) -> Result<RenderResult> {
         render_workspace(workspace, desired, registry, mode == PlanMode::Online)
     }
+
+    pub fn apply_with_output(
+        &self,
+        workspace: &Workspace,
+        desired: &DesiredState,
+        registry: &PackRegistry,
+        verbose: bool,
+    ) -> Result<ApplyResult> {
+        self.render(workspace, desired, registry)?;
+        run_terraform(workspace, &["init", "-input=false"])?;
+        let output = run_terraform_with_options(
+            workspace,
+            &["apply", "-auto-approve", "-input=false", "-no-color"],
+            verbose,
+        )?;
+        Ok(ApplyResult {
+            summary: output_summary("terraform apply", &output),
+        })
+    }
 }
 
 impl EngineBackend for TerraformBackend {
@@ -88,15 +107,7 @@ impl EngineBackend for TerraformBackend {
         desired: &DesiredState,
         registry: &PackRegistry,
     ) -> Result<ApplyResult> {
-        self.render(workspace, desired, registry)?;
-        run_terraform(workspace, &["init", "-input=false"])?;
-        let output = run_terraform(
-            workspace,
-            &["apply", "-auto-approve", "-input=false", "-no-color"],
-        )?;
-        Ok(ApplyResult {
-            summary: output_summary("terraform apply", &output),
-        })
+        self.apply_with_output(workspace, desired, registry, false)
     }
 
     fn destroy(&self, workspace: &Workspace, target: &TargetSelector) -> Result<ApplyResult> {
@@ -129,10 +140,7 @@ fn render_workspace(
     }
 
     let generated = workspace.root.join(&workspace.generated_dir);
-    if generated.exists() {
-        std::fs::remove_dir_all(&generated)?;
-    }
-    std::fs::create_dir_all(&generated)?;
+    prepare_generated_workspace(&generated)?;
 
     let mut files = Vec::new();
     write_json(
@@ -187,6 +195,31 @@ fn render_workspace(
         summary: format!("rendered {} files to {}", files.len(), generated.display()),
         files,
     })
+}
+
+fn prepare_generated_workspace(generated: &Path) -> Result<()> {
+    std::fs::create_dir_all(generated)?;
+    for relative in [
+        "desired-state.json",
+        "terraform.tfvars.json",
+        "variables.tf.json",
+        "provider.tf.json",
+        "main.tf.json",
+        "outputs.tf.json",
+        "DRY_RUN_VALIDATION_ONLY.txt",
+        "modules",
+        "resources",
+    ] {
+        let path = generated.join(relative);
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+        } else if path.exists() {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_live_inputs(desired: &DesiredState) -> Result<()> {
@@ -883,6 +916,14 @@ fn terraform_binary() -> Result<&'static str> {
 }
 
 fn run_terraform(workspace: &Workspace, args: &[&str]) -> Result<String> {
+    run_terraform_with_options(workspace, args, true)
+}
+
+fn run_terraform_with_options(
+    workspace: &Workspace,
+    args: &[&str],
+    include_full_error_output: bool,
+) -> Result<String> {
     let binary = terraform_binary()?;
     let generated = workspace.root.join(&workspace.generated_dir);
     let output = std::process::Command::new(binary)
@@ -900,10 +941,34 @@ fn run_terraform(workspace: &Workspace, args: &[&str]) -> Result<String> {
     };
 
     if !output.status.success() {
-        bail!("`{binary} {}` failed:\n{combined}", args.join(" "));
+        let error_output = if include_full_error_output {
+            combined
+        } else {
+            concise_terraform_error(&combined)
+        };
+        bail!("`{binary} {}` failed:\n{error_output}", args.join(" "));
     }
 
     Ok(combined)
+}
+
+fn concise_terraform_error(output: &str) -> String {
+    if let Some(index) = output.rfind("\nError:") {
+        return output[index..].trim().to_string();
+    }
+    if let Some(index) = output.find("Error:") {
+        return output[index..].trim().to_string();
+    }
+    output
+        .lines()
+        .rev()
+        .filter(|line| !line.trim().is_empty())
+        .take(40)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn output_summary(prefix: &str, output: &str) -> String {
@@ -941,6 +1006,38 @@ mod tests {
         assert!(output.starts_with("tofu dry-run plan:\n"));
         assert!(output.contains("module.media_stack will be created"));
         assert!(output.contains("Plan: 1 to add, 0 to change, 0 to destroy."));
+    }
+
+    #[test]
+    fn render_preserves_terraform_state_files() {
+        let root = unique_temp_dir();
+        let generated_dir = root.join("generated");
+        std::fs::create_dir_all(generated_dir.join(".terraform")).unwrap();
+        std::fs::write(generated_dir.join("terraform.tfstate"), "{}").unwrap();
+        std::fs::write(generated_dir.join(".terraform.lock.hcl"), "# lock").unwrap();
+        std::fs::write(generated_dir.join("main.tf.json"), "{}").unwrap();
+        std::fs::create_dir_all(generated_dir.join("modules/stale")).unwrap();
+
+        prepare_generated_workspace(&generated_dir).unwrap();
+
+        assert!(generated_dir.join("terraform.tfstate").is_file());
+        assert!(generated_dir.join(".terraform.lock.hcl").is_file());
+        assert!(generated_dir.join(".terraform").is_dir());
+        assert!(!generated_dir.join("main.tf.json").exists());
+        assert!(!generated_dir.join("modules").exists());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concise_terraform_error_hides_plan_body() {
+        let output = "OpenTofu will perform the following actions:\n  # module.vm will be created\nPlan: 1 to add, 0 to change, 0 to destroy.\n\nError: failed late\n\n  with module.vm";
+
+        let concise = concise_terraform_error(output);
+
+        assert!(!concise.contains("OpenTofu will perform"));
+        assert!(!concise.contains("Plan: 1 to add"));
+        assert!(concise.contains("Error: failed late"));
     }
 
     #[test]

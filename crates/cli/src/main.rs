@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -36,6 +37,8 @@ enum Command {
         #[arg(long)]
         auto_approve: bool,
         #[arg(long)]
+        verbose: bool,
+        #[arg(long)]
         skip_provision: bool,
         #[arg(long)]
         no_image_ensure: bool,
@@ -44,6 +47,8 @@ enum Command {
     Up {
         #[arg(long)]
         auto_approve: bool,
+        #[arg(long)]
+        verbose: bool,
         #[arg(long)]
         skip_provision: bool,
         #[arg(long)]
@@ -135,6 +140,7 @@ fn main() -> Result<()> {
         }
         Command::Apply {
             auto_approve,
+            verbose,
             skip_provision,
             no_image_ensure,
             target,
@@ -142,6 +148,7 @@ fn main() -> Result<()> {
             cli.config.as_deref(),
             &cli.packs,
             auto_approve,
+            verbose,
             skip_provision,
             no_image_ensure,
             target.as_deref(),
@@ -149,6 +156,7 @@ fn main() -> Result<()> {
         ),
         Command::Up {
             auto_approve,
+            verbose,
             skip_provision,
             no_image_ensure,
             target,
@@ -156,6 +164,7 @@ fn main() -> Result<()> {
             cli.config.as_deref(),
             &cli.packs,
             auto_approve,
+            verbose,
             skip_provision,
             no_image_ensure,
             target.as_deref(),
@@ -221,9 +230,14 @@ fn main() -> Result<()> {
             BackendCommand::Plan { dry_run, target } => {
                 let (workspace, desired, registry) =
                     load_workspace(cli.config.as_deref(), &cli.packs, target.as_deref())?;
+                let backend_workspace = if dry_run {
+                    dry_run_workspace(&workspace)
+                } else {
+                    workspace.clone()
+                };
                 check_dependencies(&desired, CommandScope::Plan { dry_run })?;
                 TerraformBackend.render_for_plan(
-                    &workspace,
+                    &backend_workspace,
                     &desired,
                     &registry,
                     if dry_run {
@@ -233,7 +247,7 @@ fn main() -> Result<()> {
                     },
                 )?;
                 let result = TerraformBackend.plan(
-                    &workspace,
+                    &backend_workspace,
                     &desired,
                     if dry_run {
                         PlanMode::DryRun
@@ -262,9 +276,14 @@ fn main() -> Result<()> {
             BackendCommand::Validate { live } => {
                 let (workspace, desired, registry) =
                     load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                let backend_workspace = if live {
+                    workspace.clone()
+                } else {
+                    dry_run_workspace(&workspace)
+                };
                 check_dependencies(&desired, CommandScope::ValidateRendered { live })?;
                 TerraformBackend.render_for_plan(
-                    &workspace,
+                    &backend_workspace,
                     &desired,
                     &registry,
                     if live {
@@ -273,7 +292,7 @@ fn main() -> Result<()> {
                         PlanMode::DryRun
                     },
                 )?;
-                let result = TerraformBackend.validate_rendered(&workspace)?;
+                let result = TerraformBackend.validate_rendered(&backend_workspace)?;
                 println!("{}", result.summary);
                 Ok(())
             }
@@ -317,6 +336,7 @@ fn apply_command(
     config_path: Option<&Path>,
     packs_path: &Path,
     _auto_approve: bool,
+    verbose: bool,
     skip_provision: bool,
     no_image_ensure: bool,
     target: Option<&str>,
@@ -338,8 +358,9 @@ fn apply_command(
 
     let validation = validate_live_backend(&workspace, &desired, &registry)?;
     println!("{}", validation.summary);
+    auto_recover_backend_state(&workspace, &desired)?;
 
-    let result = TerraformBackend.apply(&workspace, &desired, &registry)?;
+    let result = TerraformBackend.apply_with_output(&workspace, &desired, &registry, verbose)?;
     write_lockfile(&workspace, &desired)?;
     println!("{}; wrote vmctl.lock", result.summary);
     if !skip_provision {
@@ -356,6 +377,232 @@ fn validate_live_backend(
 ) -> Result<vmctl_backend::BackendValidation> {
     TerraformBackend.render_for_plan(workspace, desired, registry, PlanMode::Online)?;
     TerraformBackend.validate_rendered(workspace)
+}
+
+fn auto_recover_backend_state(workspace: &Workspace, desired: &DesiredState) -> Result<()> {
+    let unmanaged = find_existing_unmanaged_resources(workspace, desired)?;
+    if unmanaged.is_empty() {
+        return Ok(());
+    }
+
+    for resource in unmanaged {
+        println!(
+            "state recovery: importing existing {} {} as {}",
+            resource.kind, resource.vmid, resource.address
+        );
+        if let Err(error) = terraform_import(workspace, &resource.address, &resource.import_id) {
+            eprintln!(
+                "state recovery: import failed for `{}`:\n{}",
+                resource.name, error
+            );
+            if confirm_destroy_existing_resource(&resource)? {
+                destroy_existing_resource(&resource)?;
+                println!(
+                    "state recovery: destroyed existing {} {}; continuing with apply",
+                    resource.kind, resource.vmid
+                );
+            } else {
+                bail!("{}", manual_recovery_instructions(workspace, &resource));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnmanagedBackendResource {
+    name: String,
+    kind: String,
+    vmid: u32,
+    address: String,
+    import_id: String,
+    destroy_command: String,
+}
+
+fn find_existing_unmanaged_resources(
+    workspace: &Workspace,
+    desired: &DesiredState,
+) -> Result<Vec<UnmanagedBackendResource>> {
+    let state_addresses = terraform_state_addresses(workspace)?;
+    let default_node = default_proxmox_node(desired);
+    let mut unmanaged = Vec::new();
+
+    for resource in desired.normalized_resources.values() {
+        let Some(vmid) = resource.vmid else {
+            continue;
+        };
+        let Some(address) = backend_resource_address(&resource.name, &resource.kind) else {
+            continue;
+        };
+        if state_addresses.contains(&address) || !proxmox_resource_exists(&resource.kind, vmid) {
+            continue;
+        }
+        let node = resource
+            .node
+            .clone()
+            .or_else(|| default_node.clone())
+            .unwrap_or_else(|| "<node>".to_string());
+        unmanaged.push(UnmanagedBackendResource {
+            name: resource.name.clone(),
+            kind: resource.kind.clone(),
+            vmid,
+            address,
+            import_id: format!("{node}/{vmid}"),
+            destroy_command: proxmox_destroy_command(&resource.kind, vmid),
+        });
+    }
+
+    Ok(unmanaged)
+}
+
+fn backend_resource_address(name: &str, kind: &str) -> Option<String> {
+    let module = sanitize_backend_module_name(name);
+    match kind {
+        "vm" => Some(format!(
+            "module.{module}.proxmox_virtual_environment_vm.this[0]"
+        )),
+        "lxc" => Some(format!(
+            "module.{module}.proxmox_virtual_environment_container.this[0]"
+        )),
+        _ => None,
+    }
+}
+
+fn sanitize_backend_module_name(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn terraform_state_addresses(workspace: &Workspace) -> Result<BTreeSet<String>> {
+    let generated = workspace.root.join(&workspace.generated_dir);
+    let binary = terraform_binary_name();
+    let output = std::process::Command::new(&binary)
+        .args(["state", "list"])
+        .current_dir(&generated)
+        .output()
+        .with_context(|| format!("failed to run `{binary} state list`"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.success() {
+        return Ok(stdout.lines().map(str::to_string).collect());
+    }
+    let combined = format!("{stdout}\n{stderr}");
+    if combined.contains("No state file was found")
+        || combined.contains("does not have a state")
+        || combined.contains("No state file")
+    {
+        return Ok(BTreeSet::new());
+    }
+    bail!("`{binary} state list` failed:\n{combined}")
+}
+
+fn terraform_import(workspace: &Workspace, address: &str, import_id: &str) -> Result<()> {
+    let generated = workspace.root.join(&workspace.generated_dir);
+    let binary = terraform_binary_name();
+    let output = std::process::Command::new(&binary)
+        .args(["import", "-input=false", "-no-color", address, import_id])
+        .current_dir(&generated)
+        .output()
+        .with_context(|| format!("failed to run `{binary} import {address} {import_id}`"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    bail!("{stdout}\n{stderr}")
+}
+
+fn confirm_destroy_existing_resource(resource: &UnmanagedBackendResource) -> Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+
+    print!(
+        "Destroy existing Proxmox {} {} for `{}` and recreate it? [y/N] ",
+        resource.kind, resource.vmid, resource.name
+    );
+    std::io::stdout().flush()?;
+
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "YES" | "Yes"))
+}
+
+fn destroy_existing_resource(resource: &UnmanagedBackendResource) -> Result<()> {
+    let vmid = resource.vmid.to_string();
+    match resource.kind.as_str() {
+        "vm" => {
+            let _ = std::process::Command::new("qm")
+                .args(["stop", &vmid])
+                .status();
+            run_command_with_context(
+                "qm",
+                &["destroy", &vmid, "--purge"],
+                "failed to destroy existing VM during state recovery",
+            )
+        }
+        "lxc" => {
+            let _ = std::process::Command::new("pct")
+                .args(["stop", &vmid])
+                .status();
+            run_command_with_context(
+                "pct",
+                &["destroy", &vmid, "--purge"],
+                "failed to destroy existing container during state recovery",
+            )
+        }
+        _ => bail!("unsupported resource kind `{}`", resource.kind),
+    }
+}
+
+fn manual_recovery_instructions(
+    workspace: &Workspace,
+    resource: &UnmanagedBackendResource,
+) -> String {
+    format!(
+        "manual recovery required for `{}`.\n\nThe configured {} ID {} already exists in Proxmox, but it is not managed by OpenTofu state.\n\nOptions:\n- Adopt it into OpenTofu state:\n  cd {}\n  {} import '{}' '{}'\n- Or remove the existing Proxmox resource and rerun vmctl apply:\n  {}",
+        resource.name,
+        resource.kind,
+        resource.vmid,
+        workspace.root.join(&workspace.generated_dir).display(),
+        terraform_binary_name(),
+        resource.address,
+        resource.import_id,
+        resource.destroy_command,
+    )
+}
+
+fn terraform_binary_name() -> String {
+    if vmctl_util::command_exists("tofu") {
+        "tofu".to_string()
+    } else {
+        "terraform".to_string()
+    }
+}
+
+fn proxmox_resource_exists(kind: &str, vmid: u32) -> bool {
+    let vmid = vmid.to_string();
+    match kind {
+        "vm" => command_succeeds("qm", &["status", &vmid]),
+        "lxc" => command_succeeds("pct", &["status", &vmid]),
+        _ => false,
+    }
+}
+
+fn proxmox_destroy_command(kind: &str, vmid: u32) -> String {
+    match kind {
+        "vm" => format!("qm stop {vmid} || true; qm destroy {vmid} --purge"),
+        "lxc" => format!("pct stop {vmid} || true; pct destroy {vmid} --purge"),
+        _ => format!("remove Proxmox resource {vmid}"),
+    }
 }
 
 fn render_images_list(desired: &DesiredState) -> String {
@@ -881,6 +1128,13 @@ fn default_workspace() -> Result<Workspace> {
     })
 }
 
+fn dry_run_workspace(workspace: &Workspace) -> Workspace {
+    Workspace {
+        root: workspace.root.clone(),
+        generated_dir: PathBuf::from("backend/generated/dry-run-workspace"),
+    }
+}
+
 fn init_workspace(config_path: Option<&Path>, packs_path: &Path) -> Result<()> {
     let config_path = config_path.unwrap_or_else(|| Path::new("vmctl.toml"));
     if !config_path.exists() {
@@ -1056,6 +1310,53 @@ mod tests {
 
         assert!(matches!(apply.command, Command::Apply { .. }));
         assert!(matches!(up.command, Command::Up { .. }));
+    }
+
+    #[test]
+    fn apply_accepts_verbose_flag() {
+        Cli::command().debug_assert();
+        let cli = Cli::try_parse_from(["vmctl", "apply", "--verbose"]).unwrap();
+
+        assert!(matches!(cli.command, Command::Apply { verbose: true, .. }));
+    }
+
+    #[test]
+    fn backend_resource_addresses_match_generated_modules() {
+        assert_eq!(
+            backend_resource_address("media-stack", "vm").as_deref(),
+            Some("module.media_stack.proxmox_virtual_environment_vm.this[0]")
+        );
+        assert_eq!(
+            backend_resource_address("tailscale-gateway", "lxc").as_deref(),
+            Some("module.tailscale_gateway.proxmox_virtual_environment_container.this[0]")
+        );
+    }
+
+    #[test]
+    fn manual_recovery_instructions_include_import_and_destroy() {
+        let root = unique_temp_dir();
+        let workspace = Workspace {
+            root: root.clone(),
+            generated_dir: PathBuf::from("generated"),
+        };
+        let instructions = manual_recovery_instructions(
+            &workspace,
+            &UnmanagedBackendResource {
+                name: "media-stack".to_string(),
+                kind: "vm".to_string(),
+                vmid: 210,
+                address: "module.media_stack.proxmox_virtual_environment_vm.this[0]".to_string(),
+                import_id: "mini/210".to_string(),
+                destroy_command: "qm stop 210 || true; qm destroy 210 --purge".to_string(),
+            },
+        );
+
+        assert!(instructions.contains(" import "));
+        assert!(instructions.contains("module.media_stack.proxmox_virtual_environment_vm.this[0]"));
+        assert!(instructions.contains("mini/210"));
+        assert!(instructions.contains("qm destroy 210 --purge"));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

@@ -168,7 +168,17 @@ OpenTofu/Terraform render validation, deployment, lockfile update, and
 post-boot provisioning. Use `--skip-provision` only when you want to create or
 update Proxmox resources without running pack bootstrap scripts. Use
 `--no-image-ensure` only when the required Proxmox templates are known to exist
-and you want to skip host-side image checks.
+and you want to skip host-side image checks. By default, `apply` keeps
+OpenTofu/Terraform output concise; use `vmctl apply --verbose` when you want the
+full provider plan and apply log in the console.
+
+If a previous apply was interrupted, `vmctl apply` tries to recover before it
+creates resources. When a configured VMID/CTID already exists in Proxmox but is
+missing from OpenTofu state, vmctl first runs a non-destructive `tofu import`
+using the generated module address and `<node>/<vmid>` import ID. If import
+fails, vmctl asks whether to destroy the existing Proxmox resource and continue.
+Answer `n` to leave the resource untouched and print manual import/remove
+commands.
 
 The lower-level commands are useful for inspection and troubleshooting:
 
@@ -189,9 +199,10 @@ The lower-level commands are useful for inspection and troubleshooting:
    `existing` VM/LXC images before resource creation.
 8. `vmctl backend render` writes the live OpenTofu/Terraform workspace.
 9. `vmctl apply` ensures required images, validates the live rendered
-   workspace, and runs `tofu apply` by default. If `tofu` is unavailable,
-   `terraform` is accepted as a compatibility fallback. This requires reachable
-   Proxmox and `TF_VAR_proxmox_api_token`.
+   workspace, imports recoverable existing VMIDs/CTIDs into state, and runs
+   `tofu apply` by default. If `tofu` is unavailable, `terraform` is accepted as
+   a compatibility fallback. This requires reachable Proxmox and
+   `TF_VAR_proxmox_api_token`.
 10. `vmctl provision` uploads and executes pack-generated bootstrap scripts over
    SSH using each resource's `[resources.provision]` settings.
 
@@ -462,10 +473,12 @@ Do not enable other LXC feature flags unless the Proxmox user/token has the
 required privilege for that operation.
 
 Current deployment assumption: `vmctl apply` runs on the local machine that
-invokes the CLI and talks directly to the configured Proxmox API endpoint. The
-generated OpenTofu/Terraform workspace is also useful for inspection or manual
-execution elsewhere, but artifact-copy deployment is not yet a first-class
-workflow.
+invokes the CLI and talks directly to the configured Proxmox API endpoint. Host
+side operations such as image ensure, passthrough checks, and interrupted-apply
+recovery also use local Proxmox commands such as `pveam`, `qm`, `pct`, `pvesh`,
+and `lspci`. The generated OpenTofu/Terraform workspace is useful for
+inspection or manual execution elsewhere, but artifact-copy deployment is not
+yet a first-class workflow.
 
 Destructive destroy operations require explicit approval at the `vmctl` layer:
 `vmctl destroy` fails unless `--auto-approve` is supplied. `vmctl apply` and

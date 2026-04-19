@@ -24,3 +24,4 @@ vmctl-packs.workspace = true
 vmctl-planner.workspace = true
 vmctl-provision.workspace = true
 vmctl-render.workspace = true
+vmctl-util.workspace = true

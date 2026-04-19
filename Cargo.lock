@@ -486,6 +486,7 @@ dependencies = [
  "vmctl-planner",
  "vmctl-provision",
  "vmctl-render",
+ "vmctl-util",
 ]
 
 [[package]]
