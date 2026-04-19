@@ -365,6 +365,48 @@ client's general internet traffic through your homelab; they are useful for
 egress, not required for accessing homelab services. Enable
 `features.tailscale.exit_node = true` only when that is the intended behavior.
 
+### Proxmox Host SSH Over Tailscale
+
+Proxmox host shell access is separate from vmctl-managed resources. Do not put
+host SSH access into the `tailscale-gateway` container: the gateway is for
+resource networking, while the Proxmox node is the management plane.
+
+Use the standalone host script from a Proxmox node shell:
+
+```bash
+sudo TAILSCALE_AUTH_KEY=tskey-auth-... \
+  scripts/proxmox-host-tailscale.sh \
+  --hostname proxmox-mini \
+  --tag tag:homelab
+```
+
+The script installs Tailscale on the host, starts `tailscaled`, and runs
+`tailscale up` for host access only. It does not advertise subnet routes, does
+not enable exit-node mode, and does not modify `vmctl.toml`. By default it uses
+normal OpenSSH over the tailnet:
+
+```bash
+ssh root@proxmox-mini
+```
+
+If MagicDNS is enabled, Tailscale also provides the full tailnet DNS name shown
+by:
+
+```bash
+tailscale status --self
+```
+
+Tailscale SSH is optional and separate from normal OpenSSH. Enable it only when
+you want Tailscale to handle SSH authorization:
+
+```bash
+sudo TAILSCALE_AUTH_KEY=tskey-auth-... \
+  scripts/proxmox-host-tailscale.sh \
+  --hostname proxmox-mini \
+  --tag tag:homelab \
+  --tailscale-ssh
+```
+
 ### iGPU Passthrough
 
 iGPU passthrough is useful for media servers because Jellyfin and related

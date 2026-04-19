@@ -3093,6 +3093,27 @@ Interface: vmbr0
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn proxmox_host_tailscale_script_is_host_only() {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("scripts/proxmox-host-tailscale.sh");
+        let content = std::fs::read_to_string(&script).unwrap();
+
+        assert!(content.contains("tailscale up"));
+        assert!(content.contains("--accept-dns=false"));
+        assert!(!content.contains("--advertise-routes"));
+        assert!(!content.contains("--advertise-exit-node"));
+        assert!(!content.contains("vmctl apply"));
+
+        command_runner::run(
+            CommandOptions::new("bash", ["-n", &script.to_string_lossy()])
+                .stream(false)
+                .timeout(Duration::from_secs(10)),
+        )
+        .unwrap();
+    }
+
     fn unique_temp_dir() -> PathBuf {
         let mut dir = std::env::temp_dir();
         dir.push(format!(
