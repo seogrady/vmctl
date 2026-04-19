@@ -87,12 +87,12 @@
           "vmctl",
           "homelab"
         ],
-        "template": "local-lvm:import/noble-server-cloudimg-amd64.qcow2",
+        "template": "local:import/noble-server-cloudimg-amd64.qcow2",
         "template_storage": null,
         "vmid": 210
       },
       "source": "./modules/vm",
-      "storage": "local-lvm",
+      "storage": "local",
       "template": "${proxmox_virtual_environment_download_file.image_ubuntu_24_cloud_image.id}"
     },
     "tailscale_gateway": {
@@ -176,7 +176,7 @@
     "proxmox_virtual_environment_download_file": {
       "image_ubuntu_24_cloud_image": {
         "content_type": "import",
-        "datastore_id": "local-lvm",
+        "datastore_id": "local",
         "file_name": "noble-server-cloudimg-amd64.qcow2",
         "node_name": "mini",
         "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
