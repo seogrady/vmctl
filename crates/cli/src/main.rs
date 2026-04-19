@@ -1,6 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -216,7 +222,8 @@ fn main() -> Result<()> {
                 load_workspace(cli.config.as_deref(), &cli.packs, target.as_deref())?;
             check_dependencies(&desired, CommandScope::Provision)?;
             TerraformBackend.render(&workspace, &desired, &registry)?;
-            let result = run_provision(&workspace, &desired)?;
+            let progress = ApplyProgress::new();
+            let result = run_provision(&workspace, &desired, &progress)?;
             println!("{}", result.summary);
             Ok(())
         }
@@ -343,6 +350,7 @@ fn apply_command(
     _command: &str,
 ) -> Result<()> {
     let (workspace, desired, registry) = load_workspace(config_path, packs_path, target)?;
+    let progress = ApplyProgress::new();
     check_dependencies(&desired, CommandScope::Apply)?;
     if !skip_provision {
         check_dependencies(&desired, CommandScope::Provision)?;
@@ -357,17 +365,26 @@ fn apply_command(
     prepare_passthrough_inner(&desired, false, false)?;
     ensure_passthrough_ready(&desired)?;
 
-    let validation = validate_live_backend(&workspace, &desired, &registry)?;
+    let validation = progress.run("validating generated OpenTofu workspace", || {
+        validate_live_backend(&workspace, &desired, &registry)
+    })?;
     println!("{}", validation.summary);
-    auto_recover_backend_state(&workspace, &desired)?;
+    progress.run("checking interrupted-apply recovery", || {
+        auto_recover_backend_state(&workspace, &desired)
+    })?;
 
-    let result = TerraformBackend.apply_with_output(&workspace, &desired, &registry, verbose)?;
-    write_lockfile(&workspace, &desired)?;
+    let result = progress.run("applying OpenTofu plan", || {
+        TerraformBackend.apply_with_output(&workspace, &desired, &registry, verbose)
+    })?;
+    progress.run("writing vmctl.lock", || {
+        write_lockfile(&workspace, &desired)
+    })?;
     println!("{}; wrote vmctl.lock", result.summary);
     if !skip_provision {
-        let result = run_provision(&workspace, &desired)?;
+        let result = run_provision(&workspace, &desired, &progress)?;
         println!("{}", result.summary);
     }
+    println!("vmctl apply complete");
     Ok(())
 }
 
@@ -1259,6 +1276,134 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
         })
 }
 
+#[derive(Debug, Clone)]
+struct ApplyProgress {
+    enabled: bool,
+}
+
+impl ApplyProgress {
+    fn new() -> Self {
+        Self {
+            enabled: std::io::stderr().is_terminal(),
+        }
+    }
+
+    fn run<T>(&self, message: impl Into<String>, action: impl FnOnce() -> Result<T>) -> Result<T> {
+        let message = message.into();
+        let spinner = self.start(message.clone());
+        match action() {
+            Ok(value) => {
+                spinner.finish_ok(&message);
+                Ok(value)
+            }
+            Err(error) => {
+                spinner.finish_err(&message);
+                Err(error)
+            }
+        }
+    }
+
+    fn start(&self, message: impl Into<String>) -> ProgressSpinner {
+        ProgressSpinner::start(message.into(), self.enabled)
+    }
+}
+
+struct ProgressSpinner {
+    enabled: bool,
+    message: Arc<Mutex<String>>,
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl ProgressSpinner {
+    fn start(message: String, enabled: bool) -> Self {
+        if !enabled {
+            eprintln!(".. {message}");
+            return Self {
+                enabled,
+                message: Arc::new(Mutex::new(message)),
+                stop: Arc::new(AtomicBool::new(true)),
+                handle: None,
+            };
+        }
+
+        let message = Arc::new(Mutex::new(message));
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_message = Arc::clone(&message);
+        let thread_stop = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            let frames = ["|", "/", "-", "\\"];
+            let mut index = 0usize;
+            while !thread_stop.load(Ordering::SeqCst) {
+                let current = thread_message
+                    .lock()
+                    .map(|message| message.clone())
+                    .unwrap_or_else(|_| "working".to_string());
+                eprint!("\r{} {}", frames[index % frames.len()], current);
+                let _ = std::io::stderr().flush();
+                index = index.wrapping_add(1);
+                std::thread::sleep(Duration::from_millis(120));
+            }
+        });
+
+        Self {
+            enabled,
+            message,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    fn set_message(&self, message: impl Into<String>) {
+        if let Ok(mut current) = self.message.lock() {
+            *current = message.into();
+        }
+    }
+
+    fn status(&self, prefix: &str, message: impl AsRef<str>) {
+        if self.enabled {
+            eprint!("\r\x1b[2K");
+        }
+        eprintln!("{prefix} {}", message.as_ref());
+        if self.enabled {
+            let _ = std::io::stderr().flush();
+        }
+    }
+
+    fn finish_ok(mut self, message: &str) {
+        self.finish("[ok]", message);
+    }
+
+    fn finish_err(mut self, message: &str) {
+        self.finish("[failed]", message);
+    }
+
+    fn finish(&mut self, prefix: &str, message: &str) {
+        if self.enabled {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+            eprint!("\r\x1b[2K");
+        }
+        eprintln!("{prefix} {message}");
+        self.enabled = false;
+    }
+}
+
+impl Drop for ProgressSpinner {
+    fn drop(&mut self) {
+        if self.enabled {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+            eprint!("\r\x1b[2K");
+            let _ = std::io::stderr().flush();
+        }
+    }
+}
+
 fn required_image_names(desired: &DesiredState) -> BTreeSet<String> {
     desired
         .resources
@@ -1319,9 +1464,119 @@ fn check_dependencies(desired: &DesiredState, scope: CommandScope) -> Result<()>
 fn run_provision(
     workspace: &Workspace,
     desired: &DesiredState,
+    progress: &ApplyProgress,
 ) -> Result<vmctl_provision::ProvisionResult> {
     let plan = vmctl_provision::build_provision_plan(workspace, desired)?;
-    vmctl_provision::run_provision_plan(&plan, &vmctl_provision::SystemSshExecutor)
+    if plan.steps.is_empty() {
+        return Ok(vmctl_provision::ProvisionResult {
+            summary: "provisioned 0 scripts".to_string(),
+        });
+    }
+
+    let spinner = progress.start("provisioning resources");
+    let resource_totals = provision_resource_totals(&plan);
+    let mut resource_completed = BTreeMap::<String, usize>::new();
+    let result = vmctl_provision::run_provision_plan_with_progress(
+        &plan,
+        &vmctl_provision::SystemSshExecutor,
+        |event| match event {
+            vmctl_provision::ProvisionEvent::StepStarted { step, index, total } => {
+                spinner.set_message(format!(
+                    "provisioning {}/{}: {} via {}",
+                    index,
+                    total,
+                    step.resource,
+                    script_name(step)
+                ));
+            }
+            vmctl_provision::ProvisionEvent::UploadStarted {
+                step,
+                attempt,
+                total_attempts,
+            } => {
+                spinner.set_message(format!(
+                    "uploading {} files for {} (attempt {}/{})",
+                    script_name(step),
+                    step.resource,
+                    attempt,
+                    total_attempts
+                ));
+            }
+            vmctl_provision::ProvisionEvent::ExecuteStarted {
+                step,
+                attempt,
+                total_attempts,
+            } => {
+                spinner.set_message(format!(
+                    "running {} on {} (attempt {}/{})",
+                    script_name(step),
+                    step.resource,
+                    attempt,
+                    total_attempts
+                ));
+            }
+            vmctl_provision::ProvisionEvent::StepRetry {
+                step,
+                attempt,
+                total_attempts,
+                error,
+            } => {
+                spinner.set_message(format!(
+                    "retrying {} for {} after attempt {}/{} failed: {}",
+                    script_name(step),
+                    step.resource,
+                    attempt,
+                    total_attempts,
+                    error
+                ));
+            }
+            vmctl_provision::ProvisionEvent::StepFinished { step, index, total } => {
+                let script = script_name(step);
+                spinner.status("[ok]", format!("ran {script} on {}", step.resource));
+                let completed = resource_completed
+                    .entry(step.resource.clone())
+                    .and_modify(|value| *value += 1)
+                    .or_insert(1);
+                if Some(*completed) == resource_totals.get(&step.resource).copied() {
+                    spinner.status(
+                        "[ok]",
+                        format!("provisioned {} ({} scripts)", step.resource, completed),
+                    );
+                }
+                spinner.set_message(format!(
+                    "provisioned {}/{}: {} via {}",
+                    index, total, step.resource, script
+                ));
+            }
+        },
+    );
+
+    match result {
+        Ok(result) => {
+            spinner.finish_ok(&result.summary);
+            Ok(result)
+        }
+        Err(error) => {
+            spinner.finish_err("provisioning failed");
+            Err(error)
+        }
+    }
+}
+
+fn provision_resource_totals(plan: &vmctl_provision::ProvisionPlan) -> BTreeMap<String, usize> {
+    let mut totals = BTreeMap::new();
+    for step in &plan.steps {
+        *totals.entry(step.resource.clone()).or_insert(0) += 1;
+    }
+    totals
+}
+
+fn script_name(step: &vmctl_provision::ProvisionStep) -> String {
+    step.local_script
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("script")
+        .to_string()
 }
 
 fn ensure_lockfile(workspace: &Workspace, desired: &DesiredState) -> Result<Lockfile> {

@@ -28,6 +28,36 @@ pub struct ProvisionResult {
     pub summary: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvisionEvent<'a> {
+    StepStarted {
+        step: &'a ProvisionStep,
+        index: usize,
+        total: usize,
+    },
+    UploadStarted {
+        step: &'a ProvisionStep,
+        attempt: u32,
+        total_attempts: u32,
+    },
+    ExecuteStarted {
+        step: &'a ProvisionStep,
+        attempt: u32,
+        total_attempts: u32,
+    },
+    StepRetry {
+        step: &'a ProvisionStep,
+        attempt: u32,
+        total_attempts: u32,
+        error: String,
+    },
+    StepFinished {
+        step: &'a ProvisionStep,
+        index: usize,
+        total: usize,
+    },
+}
+
 pub trait SshExecutor {
     fn upload(&self, step: &ProvisionStep) -> Result<()>;
     fn execute(&self, step: &ProvisionStep) -> Result<()>;
@@ -129,11 +159,62 @@ pub fn run_provision_plan(
     plan: &ProvisionPlan,
     executor: &dyn SshExecutor,
 ) -> Result<ProvisionResult> {
-    for step in &plan.steps {
-        run_with_retries(step, || {
-            executor.upload(step)?;
-            executor.execute(step)
-        })?;
+    run_provision_plan_with_progress(plan, executor, |_| {})
+}
+
+pub fn run_provision_plan_with_progress(
+    plan: &ProvisionPlan,
+    executor: &dyn SshExecutor,
+    mut on_event: impl FnMut(ProvisionEvent<'_>),
+) -> Result<ProvisionResult> {
+    let total = plan.steps.len();
+    for (index, step) in plan.steps.iter().enumerate() {
+        let index = index + 1;
+        on_event(ProvisionEvent::StepStarted { step, index, total });
+        let attempts = step.retries.max(1);
+        let mut last_error = None;
+        for attempt in 1..=attempts {
+            let result = (|| {
+                on_event(ProvisionEvent::UploadStarted {
+                    step,
+                    attempt,
+                    total_attempts: attempts,
+                });
+                executor.upload(step)?;
+                on_event(ProvisionEvent::ExecuteStarted {
+                    step,
+                    attempt,
+                    total_attempts: attempts,
+                });
+                executor.execute(step)
+            })();
+            match result {
+                Ok(()) => {
+                    last_error = None;
+                    break;
+                }
+                Err(error) => {
+                    on_event(ProvisionEvent::StepRetry {
+                        step,
+                        attempt,
+                        total_attempts: attempts,
+                        error: error.to_string(),
+                    });
+                    eprintln!(
+                        "provision {} failed attempt {attempt}/{attempts}: {error}",
+                        step.resource
+                    );
+                    last_error = Some(error);
+                    if attempt < attempts {
+                        std::thread::sleep(step.retry_delay);
+                    }
+                }
+            }
+        }
+        if let Some(error) = last_error {
+            return Err(error);
+        }
+        on_event(ProvisionEvent::StepFinished { step, index, total });
     }
 
     Ok(ProvisionResult {
@@ -203,27 +284,6 @@ fn resource_steps(
         });
     }
     Ok(steps)
-}
-
-fn run_with_retries(step: &ProvisionStep, mut action: impl FnMut() -> Result<()>) -> Result<()> {
-    let attempts = step.retries.max(1);
-    let mut last_error = None;
-    for attempt in 1..=attempts {
-        match action() {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                eprintln!(
-                    "provision {} failed attempt {attempt}/{attempts}: {error}",
-                    step.resource
-                );
-                last_error = Some(error);
-                if attempt < attempts {
-                    std::thread::sleep(step.retry_delay);
-                }
-            }
-        }
-    }
-    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("provision failed")))
 }
 
 #[cfg(test)]
@@ -339,6 +399,97 @@ mod tests {
             vec![
                 "upload:media-stack".to_string(),
                 "execute:media-stack".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn each_planned_script_is_executed_once_per_provision_run() {
+        struct Recorder {
+            calls: RefCell<Vec<String>>,
+        }
+
+        impl SshExecutor for Recorder {
+            fn upload(&self, step: &ProvisionStep) -> Result<()> {
+                self.calls.borrow_mut().push(format!(
+                    "upload:{}:{}",
+                    step.resource,
+                    step.local_script.display()
+                ));
+                Ok(())
+            }
+
+            fn execute(&self, step: &ProvisionStep) -> Result<()> {
+                self.calls.borrow_mut().push(format!(
+                    "execute:{}:{}",
+                    step.resource,
+                    step.local_script.display()
+                ));
+                Ok(())
+            }
+        }
+
+        let executor = Recorder {
+            calls: RefCell::new(Vec::new()),
+        };
+        let plan = ProvisionPlan {
+            steps: vec![
+                ProvisionStep {
+                    resource: "media-stack".to_string(),
+                    host: "media-stack.home.arpa".to_string(),
+                    user: "ubuntu".to_string(),
+                    private_key_file: "/home/me/.ssh/id_ed25519".to_string(),
+                    local_resource_dir: PathBuf::from("."),
+                    remote_resource_dir: "/tmp/vmctl-media-stack".to_string(),
+                    local_script: PathBuf::from("bootstrap-media.sh"),
+                    remote_script: "/tmp/bootstrap-media.sh".to_string(),
+                    retries: 1,
+                    retry_delay: Duration::from_secs(0),
+                },
+                ProvisionStep {
+                    resource: "media-stack".to_string(),
+                    host: "media-stack.home.arpa".to_string(),
+                    user: "ubuntu".to_string(),
+                    private_key_file: "/home/me/.ssh/id_ed25519".to_string(),
+                    local_resource_dir: PathBuf::from("."),
+                    remote_resource_dir: "/tmp/vmctl-media-stack".to_string(),
+                    local_script: PathBuf::from("bootstrap-tailscale.sh"),
+                    remote_script: "/tmp/bootstrap-tailscale.sh".to_string(),
+                    retries: 1,
+                    retry_delay: Duration::from_secs(0),
+                },
+            ],
+        };
+        let mut events = Vec::new();
+
+        let result = run_provision_plan_with_progress(&plan, &executor, |event| match event {
+            ProvisionEvent::ExecuteStarted { step, .. } => {
+                events.push(format!("execute:{}", step.local_script.display()));
+            }
+            ProvisionEvent::StepFinished { step, .. } => {
+                events.push(format!("finished:{}", step.local_script.display()));
+            }
+            _ => {}
+        })
+        .unwrap();
+
+        assert_eq!(result.summary, "provisioned 2 scripts");
+        assert_eq!(
+            executor.calls.into_inner(),
+            vec![
+                "upload:media-stack:bootstrap-media.sh".to_string(),
+                "execute:media-stack:bootstrap-media.sh".to_string(),
+                "upload:media-stack:bootstrap-tailscale.sh".to_string(),
+                "execute:media-stack:bootstrap-tailscale.sh".to_string(),
+            ]
+        );
+        assert_eq!(
+            events,
+            vec![
+                "execute:bootstrap-media.sh".to_string(),
+                "finished:bootstrap-media.sh".to_string(),
+                "execute:bootstrap-tailscale.sh".to_string(),
+                "finished:bootstrap-tailscale.sh".to_string(),
             ]
         );
     }

@@ -251,4 +251,44 @@ mod tests {
             "unix:0"
         );
     }
+
+    #[test]
+    fn generated_scripts_are_recorded_as_lockfile_artifacts() {
+        let root = unique_temp_dir();
+        let scripts_dir = root.join("resources/media-stack/scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        let script = scripts_dir.join("bootstrap-media.sh");
+        std::fs::write(&script, "#!/usr/bin/env bash\necho media\n").unwrap();
+
+        let desired = DesiredState {
+            backend: BackendConfig::default(),
+            images: BTreeMap::new(),
+            resources: vec![],
+            normalized_resources: BTreeMap::new(),
+            expansions: BTreeMap::new(),
+        };
+        let lockfile = Lockfile::from_desired_with_artifacts(&desired, &root, &[script]).unwrap();
+
+        assert_eq!(lockfile.artifacts.len(), 1);
+        assert_eq!(
+            lockfile.artifacts[0].path,
+            "resources/media-stack/scripts/bootstrap-media.sh"
+        );
+        assert!(lockfile.artifacts[0].digest.starts_with("sha256:"));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "vmctl-lockfile-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        dir
+    }
 }

@@ -172,6 +172,18 @@ and you want to skip host-side image checks. By default, `apply` keeps
 OpenTofu/Terraform output concise; use `vmctl apply --verbose` when you want the
 full provider plan and apply log in the console.
 
+`vmctl apply` exits when the full workflow finishes. Interactive terminals show
+spinner progress for long-running phases such as OpenTofu apply and post-boot
+SSH provisioning. Provisioning progress includes the resource name, script name,
+and retry attempt. When a script finishes inside a resource, vmctl prints a
+persistent status line such as `ran bootstrap-media.sh on media-stack`; when all
+scripts for that resource finish, it prints `provisioned media-stack`. A
+successful run ends with:
+
+```text
+vmctl apply complete
+```
+
 If a previous apply was interrupted, `vmctl apply` tries to recover before it
 creates resources. When a configured VMID/CTID already exists in Proxmox but is
 missing from OpenTofu state, vmctl first runs a non-destructive `tofu import`
