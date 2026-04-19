@@ -127,8 +127,11 @@ auth_key = "${TAILSCALE_AUTH_KEY}"
 tags = ["${default_tailnet_tag}"]
 
 [resources.features.intel_igpu]
-enabled = true
-pci_device = "00:02.0"
+enabled = false
+# Raw PCI devices such as "00:02.0" require root@pam. Prefer a Proxmox PCI
+# resource mapping when using an API token.
+# mapping = "intel-igpu"
+# pci_device = "00:02.0"
 
 [resources.features.media_services]
 enabled = true

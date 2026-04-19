@@ -301,6 +301,43 @@ client's general internet traffic through your homelab; they are useful for
 egress, not required for accessing homelab services. Enable
 `features.tailscale.exit_node = true` only when that is the intended behavior.
 
+iGPU passthrough is disabled in the example because raw PCI devices such as
+`00:02.0` can only be assigned by `root@pam`. When using a Proxmox API token,
+create a Proxmox PCI resource mapping and configure that mapping instead:
+
+```toml
+[resources.features.intel_igpu]
+enabled = true
+mapping = "intel-igpu"
+pci_device = "00:02.0"
+```
+
+The `pci_device` value is used by `vmctl passthrough prepare` to create the
+mapping. The generated VM hardware uses the mapping name, not raw hostpci, when
+`mapping` is set.
+
+Passthrough checks run automatically during `vmctl apply` before OpenTofu
+applies changes. You can run them directly with:
+
+```bash
+vmctl passthrough doctor
+```
+
+To create missing Proxmox PCI resource mappings from config:
+
+```bash
+vmctl passthrough prepare --dry-run
+vmctl passthrough prepare
+```
+
+`prepare` can create Proxmox PCI mappings with `pvesh`, but it will not change
+BIOS settings or kernel boot arguments. If IOMMU groups are missing under
+`/sys/kernel/iommu_groups`, enable VT-d/IOMMU in BIOS and configure the Proxmox
+kernel for IOMMU, then reboot.
+
+Use raw `pci_device = "00:02.0"` without `mapping` only when applying as an
+interactive `root@pam` session and you intend to grant raw host PCI access.
+
 Image commands:
 
 ```bash

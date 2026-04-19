@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use toml::Value;
 use vmctl_backend::{EngineBackend, PlanMode, TargetSelector};
 use vmctl_backend_terraform::TerraformBackend;
 use vmctl_config::{resolve_config_path, Config};
@@ -67,6 +68,10 @@ enum Command {
         #[command(subcommand)]
         command: ImagesCommand,
     },
+    Passthrough {
+        #[command(subcommand)]
+        command: PassthroughCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -95,6 +100,15 @@ enum ImagesCommand {
         image: Option<String>,
     },
     Doctor,
+}
+
+#[derive(Debug, Subcommand)]
+enum PassthroughCommand {
+    Doctor,
+    Prepare {
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -285,6 +299,17 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Command::Passthrough { command } => {
+            let (_workspace, desired, _registry) =
+                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+            match command {
+                PassthroughCommand::Doctor => {
+                    print!("{}", render_passthrough_doctor(&desired)?);
+                    Ok(())
+                }
+                PassthroughCommand::Prepare { dry_run } => prepare_passthrough(&desired, dry_run),
+            }
+        }
     }
 }
 
@@ -309,6 +334,7 @@ fn apply_command(
     } else {
         ensure_images(&desired, None, false)?;
     }
+    ensure_passthrough_ready(&desired)?;
 
     let validation = validate_live_backend(&workspace, &desired, &registry)?;
     println!("{}", validation.summary);
@@ -580,6 +606,250 @@ fn pveam_template_family(file_name: &str) -> &str {
     file_name.split('_').next().unwrap_or(file_name)
 }
 
+fn render_passthrough_doctor(desired: &DesiredState) -> Result<String> {
+    let requests = passthrough_requests(desired);
+    if requests.is_empty() {
+        return Ok("passthrough: no enabled PCI passthrough features\n".to_string());
+    }
+
+    let mut output = String::new();
+    output.push_str("passthrough doctor\n");
+    for request in &requests {
+        output.push_str(&format!(
+            "- {}: node={} mapping={} pci_device={}\n",
+            request.resource,
+            request.node.as_deref().unwrap_or("<default>"),
+            request.mapping.as_deref().unwrap_or("none"),
+            request.pci_device.as_deref().unwrap_or("none")
+        ));
+    }
+
+    match check_passthrough_ready(&requests) {
+        Ok(()) => output.push_str("status: ready\n"),
+        Err(error) => output.push_str(&format!("status: not ready\n{error}\n")),
+    }
+
+    Ok(output)
+}
+
+fn ensure_passthrough_ready(desired: &DesiredState) -> Result<()> {
+    let requests = passthrough_requests(desired);
+    if requests.is_empty() {
+        return Ok(());
+    }
+    check_passthrough_ready(&requests)?;
+    println!("passthrough: ready");
+    Ok(())
+}
+
+fn prepare_passthrough(desired: &DesiredState, dry_run: bool) -> Result<()> {
+    let requests = passthrough_requests(desired);
+    if requests.is_empty() {
+        println!("passthrough: no enabled PCI passthrough features");
+        return Ok(());
+    }
+
+    if !iommu_groups_present() {
+        bail!(
+            "IOMMU groups were not detected under /sys/kernel/iommu_groups. Enable VT-d/IOMMU in BIOS and ensure the Proxmox kernel has IOMMU enabled, then reboot before preparing PCI mappings."
+        );
+    }
+
+    for request in requests {
+        let Some(mapping) = &request.mapping else {
+            bail!(
+                "resource `{}` enables passthrough but has no `mapping`; set `mapping = \"intel-igpu\"` and `pci_device = \"00:02.0\"` first",
+                request.resource
+            );
+        };
+        if pci_mapping_exists(mapping) {
+            println!("passthrough mapping `{mapping}` already exists");
+            continue;
+        }
+
+        let node = request
+            .node
+            .clone()
+            .or_else(|| default_proxmox_node(desired))
+            .with_context(|| {
+                format!(
+                    "resource `{}` passthrough mapping `{mapping}` requires a node; set backend.proxmox.node or resource node",
+                    request.resource
+                )
+            })?;
+        let pci_device = request.pci_device.as_deref().with_context(|| {
+            format!(
+                "resource `{}` passthrough mapping `{mapping}` requires `pci_device` so vmctl can create the Proxmox PCI mapping",
+                request.resource
+            )
+        })?;
+        let pci_path = proxmox_pci_path(pci_device);
+        let hardware_id = pci_hardware_id(pci_device).with_context(|| {
+            format!("failed to resolve PCI vendor/device id for `{pci_device}` with lspci")
+        })?;
+        let map = format!("node={node},path={pci_path},id={hardware_id}");
+
+        if dry_run {
+            println!("pvesh create /cluster/mapping/pci --id {mapping} --map {map}");
+        } else {
+            run_command_with_context(
+                "pvesh",
+                &["create", "/cluster/mapping/pci", "--id", mapping, "--map", &map],
+                "failed to create Proxmox PCI resource mapping. You need Mapping.Modify on /mapping/pci/<name>, and the device path/id must match the host hardware.",
+            )?;
+            println!("created passthrough mapping `{mapping}` for {pci_path} on {node}");
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PassthroughRequest {
+    resource: String,
+    node: Option<String>,
+    mapping: Option<String>,
+    pci_device: Option<String>,
+}
+
+fn passthrough_requests(desired: &DesiredState) -> Vec<PassthroughRequest> {
+    desired
+        .normalized_resources
+        .values()
+        .filter_map(|resource| {
+            let intel_igpu = resource
+                .features
+                .get("intel_igpu")
+                .and_then(Value::as_table)?;
+            let enabled = intel_igpu
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !enabled {
+                return None;
+            }
+            Some(PassthroughRequest {
+                resource: resource.name.clone(),
+                node: resource.node.clone(),
+                mapping: intel_igpu
+                    .get("mapping")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                pci_device: intel_igpu
+                    .get("pci_device")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            })
+        })
+        .collect()
+}
+
+fn check_passthrough_ready(requests: &[PassthroughRequest]) -> Result<()> {
+    let mut failures = Vec::new();
+
+    if !iommu_groups_present() {
+        failures.push(
+            "IOMMU groups were not detected under /sys/kernel/iommu_groups. Enable VT-d/IOMMU in BIOS and ensure the Proxmox kernel has IOMMU enabled, then reboot."
+                .to_string(),
+        );
+    }
+
+    for request in requests {
+        match (&request.mapping, &request.pci_device) {
+            (Some(mapping), _) => {
+                if !pci_mapping_exists(mapping) {
+                    failures.push(format!(
+                        "resource `{}` requires PCI mapping `{mapping}`, but it was not found. Create it in Proxmox Datacenter -> Resource Mappings -> PCI Devices, or with pvesh, then grant the API token Mapping.Use on /mapping/pci/{mapping}.",
+                        request.resource
+                    ));
+                }
+            }
+            (None, Some(pci_device)) => failures.push(format!(
+                "resource `{}` uses raw PCI device `{pci_device}`. Raw hostpci requires an interactive root@pam session and cannot be set by API token. Create a Proxmox PCI resource mapping and use `mapping = \"...\"` instead.",
+                request.resource
+            )),
+            (None, None) => failures.push(format!(
+                "resource `{}` enables intel_igpu but does not set `mapping`. Create a Proxmox PCI resource mapping and set `mapping = \"<name>\"`.",
+                request.resource
+            )),
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        bail!("passthrough preflight failed:\n- {}", failures.join("\n- "))
+    }
+}
+
+fn iommu_groups_present() -> bool {
+    std::fs::read_dir("/sys/kernel/iommu_groups")
+        .ok()
+        .and_then(|mut entries| entries.next())
+        .is_some()
+}
+
+fn pci_mapping_exists(mapping: &str) -> bool {
+    command_output_contains(
+        "pvesh",
+        &["get", &format!("/cluster/mapping/pci/{mapping}")],
+        mapping,
+    ) || command_output_contains("pvesh", &["get", "/cluster/mapping/pci"], mapping)
+}
+
+fn default_proxmox_node(desired: &DesiredState) -> Option<String> {
+    desired
+        .backend
+        .settings
+        .get("proxmox")
+        .and_then(Value::as_table)
+        .and_then(|proxmox| proxmox.get("node"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn proxmox_pci_path(pci_device: &str) -> String {
+    if pci_device.matches(':').count() >= 2 {
+        pci_device.to_string()
+    } else {
+        format!("0000:{pci_device}")
+    }
+}
+
+fn pci_hardware_id(pci_device: &str) -> Result<String> {
+    let output = std::process::Command::new("lspci")
+        .args(["-nns", pci_device])
+        .output()
+        .with_context(|| format!("failed to run `lspci -nns {pci_device}`"))?;
+    if !output.status.success() {
+        bail!("`lspci -nns {pci_device}` failed");
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_lspci_hardware_id(&stdout)
+        .map(str::to_string)
+        .with_context(|| format!("could not parse vendor/device id from lspci output: {stdout}"))
+}
+
+fn parse_lspci_hardware_id(output: &str) -> Option<&str> {
+    output
+        .split_whitespace()
+        .map(|part| part.trim_matches(&['[', ']'][..]))
+        .find(|part| part.len() == 9 && part.as_bytes().get(4) == Some(&b':'))
+}
+
+fn command_output_contains(command: &str, args: &[&str], needle: &str) -> bool {
+    std::process::Command::new(command)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout).contains(needle)
+                || String::from_utf8_lossy(&output.stderr).contains(needle)
+        })
+        .unwrap_or(false)
+}
+
 fn required_image_names(desired: &DesiredState) -> BTreeSet<String> {
     desired
         .resources
@@ -786,6 +1056,95 @@ mod tests {
 
         assert!(matches!(apply.command, Command::Apply { .. }));
         assert!(matches!(up.command, Command::Up { .. }));
+    }
+
+    #[test]
+    fn passthrough_doctor_command_parses() {
+        Cli::command().debug_assert();
+        let cli = Cli::try_parse_from(["vmctl", "passthrough", "doctor"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Passthrough {
+                command: PassthroughCommand::Doctor
+            }
+        ));
+    }
+
+    #[test]
+    fn passthrough_prepare_command_parses() {
+        Cli::command().debug_assert();
+        let cli = Cli::try_parse_from(["vmctl", "passthrough", "prepare", "--dry-run"]).unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Passthrough {
+                command: PassthroughCommand::Prepare { dry_run: true }
+            }
+        ));
+    }
+
+    #[test]
+    fn passthrough_requests_find_enabled_igpu_resources() {
+        let mut features = BTreeMap::new();
+        features.insert(
+            "intel_igpu".to_string(),
+            toml::Value::Table(toml::map::Map::from_iter([
+                ("enabled".to_string(), toml::Value::Boolean(true)),
+                (
+                    "mapping".to_string(),
+                    toml::Value::String("intel-igpu".to_string()),
+                ),
+            ])),
+        );
+        let desired = DesiredState {
+            backend: BackendConfig::default(),
+            images: BTreeMap::new(),
+            resources: Vec::new(),
+            normalized_resources: BTreeMap::from([(
+                "media-stack".to_string(),
+                vmctl_domain::NormalizedResource {
+                    name: "media-stack".to_string(),
+                    node: Some("mini".to_string()),
+                    features,
+                    ..vmctl_domain::NormalizedResource::default()
+                },
+            )]),
+            expansions: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            passthrough_requests(&desired),
+            vec![PassthroughRequest {
+                resource: "media-stack".to_string(),
+                node: Some("mini".to_string()),
+                mapping: Some("intel-igpu".to_string()),
+                pci_device: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn passthrough_preflight_rejects_raw_pci() {
+        let err = check_passthrough_ready(&[PassthroughRequest {
+            resource: "media-stack".to_string(),
+            node: Some("mini".to_string()),
+            mapping: None,
+            pci_device: Some("00:02.0".to_string()),
+        }])
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Raw hostpci requires"));
+    }
+
+    #[test]
+    fn parses_lspci_vendor_device_id() {
+        assert_eq!(
+            parse_lspci_hardware_id(
+                "00:02.0 VGA compatible controller [0300]: Intel Corporation Alder Lake-P GT2 [Iris Xe Graphics] [8086:46a6] (rev 0c)"
+            ),
+            Some("8086:46a6")
+        );
     }
 
     #[test]

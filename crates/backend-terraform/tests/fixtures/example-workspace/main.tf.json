@@ -29,8 +29,7 @@
             "enabled": true
           },
           "intel_igpu": {
-            "enabled": true,
-            "pci_device": "00:02.0"
+            "enabled": false
           },
           "media_services": {
             "enabled": true,

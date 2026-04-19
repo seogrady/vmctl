@@ -686,10 +686,10 @@ fn vm_resource_json() -> (String, Value) {
                         }
                     },
                     "hostpci": {
-                        "for_each": "${try(var.resource.features.intel_igpu.enabled, false) ? [var.resource.features.intel_igpu] : []}",
+                        "for_each": "${try(var.resource.features.intel_igpu.enabled, false) && (try(var.resource.features.intel_igpu.pci_device, null) != null || try(var.resource.features.intel_igpu.mapping, null) != null) ? [var.resource.features.intel_igpu] : []}",
                         "content": {
                             "device": "hostpci0",
-                            "id": "${try(hostpci.value.pci_device, null)}",
+                            "id": "${try(hostpci.value.mapping, null) == null ? try(hostpci.value.pci_device, null) : null}",
                             "mapping": "${try(hostpci.value.mapping, null)}",
                             "pcie": "${try(hostpci.value.pcie, true)}",
                             "rombar": "${try(hostpci.value.rombar, true)}",
