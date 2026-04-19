@@ -1,2 +1,0 @@
-This workspace was rendered for vmctl backend plan --dry-run.
-It intentionally omits live Proxmox provider resources and must not be applied.

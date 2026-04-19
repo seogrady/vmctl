@@ -1,1 +1,0 @@
-{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"media_stack","Source":"./modules/vm","Dir":"modules/vm"},{"Key":"tailscale_gateway","Source":"./modules/lxc","Dir":"modules/lxc"}]}
