@@ -7,7 +7,7 @@ name = "tailscale-gateway"
 kind = "lxc"
 vmid = 101
 backend_address = "module.tailscale_gateway.proxmox_virtual_environment_container.this"
-digest = "sha256:93bfce3b64b2d39cb7371ad25cdced1231fcbc4b50549038d2f1f2f8b76d884c"
+digest = "sha256:ccadb5b73b3c688b332b0ed07f2a83e4264e602c51344cbf75982df5286859f9"
 exists = true
 
 [[resources]]
@@ -15,7 +15,7 @@ name = "media-stack"
 kind = "vm"
 vmid = 210
 backend_address = "module.media_stack.proxmox_virtual_environment_vm.this"
-digest = "sha256:6deda7a8cb7deedad09671bb2123b29d160c48b76f9a5a580de389ab32b6c689"
+digest = "sha256:eb8005d80d70aa4e4dda732ad76f52f6331a444499ab1617e6bbda559231bcb5"
 exists = true
 
 [[artifacts]]
@@ -48,11 +48,11 @@ digest = "sha256:1936aefac902f77b492259cbf9649c367de2fa7c0e743ca47614e9acbefabea
 
 [[artifacts]]
 path = "desired-state.json"
-digest = "sha256:fbf0e01818f24fc53ea65ce61b2df03e2039c55dc820a6eb12b5eaa7e83d82cc"
+digest = "sha256:9ff2762ffb85e94b18339444fdfe665d2c3002da967e2fda835506ec9b43f984"
 
 [[artifacts]]
 path = "main.tf.json"
-digest = "sha256:618bd5bf9d9e51f31b6f38d5de38a745df7653a8963ee82233733cf1d2af51e1"
+digest = "sha256:cd78378eb58f412f37a3234d3fd151180e38f5b007b7db8a75bac7f3c3b69507"
 
 [[artifacts]]
 path = "modules/lxc/main.tf.json"
@@ -104,7 +104,7 @@ digest = "sha256:f1566fb7505982227720c98acbce49fbacbae3a45a7fdd8ca2c04c032f25eee
 
 [[artifacts]]
 path = "resources/media-stack/tailscale-setup.sh"
-digest = "sha256:adc36f91c0988e19569b6959ac8d60c46968a41f5640793b0acf9a49b816489d"
+digest = "sha256:0da0d5283d97b252d860228252d38bd7e6c9e7da2c40525caf895e0cd3b4aac8"
 
 [[artifacts]]
 path = "resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"
@@ -112,7 +112,7 @@ digest = "sha256:f1566fb7505982227720c98acbce49fbacbae3a45a7fdd8ca2c04c032f25eee
 
 [[artifacts]]
 path = "resources/tailscale-gateway/tailscale-setup.sh"
-digest = "sha256:8584d6142f79510f95040e4c736ad831b98dbdc8b86841adebfbad0bb5e6736d"
+digest = "sha256:46efaa95c3ca2f90085ad2357859e3ebc8407b0bdcff31f3c0d6500c366fa130"
 
 [[artifacts]]
 path = "terraform.tfstate"
@@ -124,7 +124,7 @@ digest = "sha256:5cbd2cf221ec17624af93c1f31957231ebaea8794f14367a8e3961f2baad048
 
 [[artifacts]]
 path = "terraform.tfvars.json"
-digest = "sha256:3c6513e277ec5352001f701f1fbbc3d55fbbf3f0207dc26aa820ae1872e36912"
+digest = "sha256:776a7dc2d4f1b4636796c595c1d4aedf98ac87fa02da19a99964a629ddde16e5"
 
 [[artifacts]]
 path = "variables.tf.json"

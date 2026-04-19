@@ -7,7 +7,7 @@ if [[ "$VMCTL_TAILSCALE_ENABLED" != "1" ]]; then
   exit 0
 fi
 
-args=(--auth-key "{{tailscale.auth_key}}")
+args=(--reset --auth-key "{{tailscale.auth_key}}")
 {{#if tailscale.hostname}}
 args+=(--hostname "{{tailscale.hostname}}")
 {{/if}}

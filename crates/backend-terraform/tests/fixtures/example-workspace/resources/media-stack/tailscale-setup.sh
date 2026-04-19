@@ -7,8 +7,8 @@ if [[ "$VMCTL_TAILSCALE_ENABLED" != "1" ]]; then
   exit 0
 fi
 
-args=(--auth-key "tskey-fixture")
-args+=(--hostname "media")
+args=(--reset --auth-key "tskey-fixture")
+args+=(--hostname "media-stack")
 args+=(--advertise-tags "tag:homelab")
 
 

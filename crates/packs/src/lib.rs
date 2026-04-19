@@ -312,7 +312,7 @@ fn tailscale_context(resource: &Resource) -> serde_json::Value {
         {
             Some(resource.name.clone())
         }
-        _ => None,
+        _ => Some(resource.name.clone()),
     };
 
     serde_json::json!({
@@ -437,6 +437,39 @@ mod tests {
             service_names_for_resource(&role, &resource),
             vec!["jellyfin".to_string(), "prowlarr".to_string()]
         );
+    }
+
+    #[test]
+    fn tailscale_hostname_defaults_to_resource_name() {
+        let mut resource = Resource {
+            name: "tailscale-gateway".to_string(),
+            kind: "lxc".to_string(),
+            image: None,
+            role: Some("tailscale_gateway".to_string()),
+            vmid: None,
+            depends_on: Vec::new(),
+            features: BTreeMap::from([(
+                "tailscale".to_string(),
+                toml::Value::Table(toml::map::Map::from_iter([(
+                    "enabled".to_string(),
+                    toml::Value::Boolean(true),
+                )])),
+            )]),
+            settings: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            tailscale_context(&resource).get("hostname").unwrap(),
+            "tailscale-gateway"
+        );
+
+        resource
+            .settings
+            .insert("hostname".to_string(), toml::Value::Boolean(false));
+        assert!(tailscale_context(&resource)
+            .get("hostname")
+            .unwrap()
+            .is_null());
     }
 
     #[test]

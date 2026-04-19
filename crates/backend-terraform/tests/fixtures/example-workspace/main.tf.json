@@ -55,7 +55,7 @@
             ]
           }
         },
-        "hostname": "media",
+            "hostname": null,
         "image": "ubuntu_24_cloud_image",
         "iothread": null,
         "kind": "vm",
@@ -75,7 +75,7 @@
         "node": null,
         "os_type": null,
         "provision": {
-          "host": "media.home.arpa",
+              "host": "media-stack",
           "private_key_file": "<redacted>",
           "retries": 20,
           "retry_delay_seconds": 15,
@@ -132,7 +132,7 @@
             ]
           }
         },
-        "hostname": "tailscale-gateway",
+            "hostname": null,
         "image": "debian_12_lxc",
         "iothread": null,
         "kind": "lxc",
@@ -152,7 +152,7 @@
         "node": null,
         "os_type": null,
         "provision": {
-          "host": "tailscale-gateway.home.arpa",
+              "host": "tailscale-gateway",
           "private_key_file": "<redacted>",
           "retries": 20,
           "retry_delay_seconds": 15,

@@ -391,8 +391,9 @@ fn provision_config(
         .get("host")
         .and_then(toml::Value::as_str)
         .map(str::to_string);
-    let host =
-        explicit_host.or_else(|| hostname.map(|hostname| provision_host(hostname, searchdomain)));
+    let host = explicit_host
+        .or_else(|| hostname.map(|hostname| provision_host(hostname, searchdomain)))
+        .or_else(|| Some(resource.name.clone()));
     Some(ProvisionConfig {
         host,
         user: table
@@ -757,6 +758,27 @@ mod tests {
     }
 
     #[test]
+    fn provision_defaults_to_resource_name_without_hostname_setting() {
+        let mut input = resource("media-stack", "vm", vec![]);
+        input.settings.insert(
+            "searchdomain".to_string(),
+            toml::Value::String("home.arpa".to_string()),
+        );
+        input.settings.insert(
+            "provision".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
+
+        let normalized = normalize_resource(&input, &BTreeMap::new()).unwrap();
+
+        assert_eq!(normalized.hostname, None);
+        assert_eq!(
+            normalized.provision.and_then(|provision| provision.host),
+            Some("media-stack".to_string())
+        );
+    }
+
+    #[test]
     fn global_hostnames_default_to_resource_name_and_provision_fqdn() {
         let mut input = resource("media-stack", "vm", vec![]);
         input
@@ -830,7 +852,7 @@ mod tests {
         assert_eq!(normalized.hostname, None);
         assert_eq!(
             normalized.provision.and_then(|provision| provision.host),
-            None
+            Some("media-stack".to_string())
         );
     }
 
