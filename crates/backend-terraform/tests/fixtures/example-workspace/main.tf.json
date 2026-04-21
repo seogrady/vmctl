@@ -139,7 +139,12 @@
               "sonarr",
               "radarr",
               "prowlarr",
-              "qbittorrent-vpn"
+              "qbittorrent-vpn",
+              "jellyseerr",
+              "bazarr",
+              "homarr",
+              "jellystat-db",
+              "jellystat"
             ],
             "ui_homepage_enabled": true,
             "ui_homepage_title": "Media Stack"

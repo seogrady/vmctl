@@ -7,7 +7,7 @@ name = "tailscale-gateway"
 kind = "lxc"
 vmid = 101
 backend_address = "module.tailscale_gateway.proxmox_virtual_environment_container.this"
-digest = "sha256:ccadb5b73b3c688b332b0ed07f2a83e4264e602c51344cbf75982df5286859f9"
+digest = "sha256:4137b3792fb078a5c15b22c07f0f67e34243f6c20237131a842c8407179c5047"
 exists = true
 
 [[resources]]
@@ -15,7 +15,7 @@ name = "media-stack"
 kind = "vm"
 vmid = 210
 backend_address = "module.media_stack.proxmox_virtual_environment_vm.this"
-digest = "sha256:50f3fa2740f2ef095d4c3b5bf0fffcfc5a00d102e8135871f70ecddea4c0227e"
+digest = "sha256:104d1737a4d5e0a0425a4f2ea04cdeda5833e41b34b44504aeb7883c6d317956"
 exists = true
 
 [[resources]]
@@ -23,56 +23,36 @@ name = "kodi-htpc"
 kind = "vm"
 vmid = 211
 backend_address = "module.kodi_htpc.proxmox_virtual_environment_vm.this"
-digest = "sha256:7b11df815280d3a808fc1e0a5db3d65afdb8756b863695ec855940835fe66b88"
+digest = "sha256:99aa67afbb5e4653896bd912a80018dbc2274025ae86ba4ec454538a3de6f672"
 exists = true
 
 [[artifacts]]
-path = ".terraform/modules/modules.json"
-digest = "sha256:14b65e6b7856d2880d4e8d4207699382072a60db94eeb5e5b631cfb797696712"
-
-[[artifacts]]
-path = ".terraform/providers/registry.opentofu.org/bpg/proxmox/0.98.0/linux_amd64/CHANGELOG.md"
-digest = "sha256:8c13c1e5ce756e0a189d57c5ba243e1ef414edce7e785ec7cd7f1dd5c869da68"
-
-[[artifacts]]
-path = ".terraform/providers/registry.opentofu.org/bpg/proxmox/0.98.0/linux_amd64/LICENSE"
-digest = "sha256:1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
-
-[[artifacts]]
-path = ".terraform/providers/registry.opentofu.org/bpg/proxmox/0.98.0/linux_amd64/README.md"
-digest = "sha256:7f9aa88ddad42eddf8e9f20b6f85a4d8050599ec61b24bc9b6537f6da5ce3e2b"
-
-[[artifacts]]
-path = ".terraform/providers/registry.opentofu.org/bpg/proxmox/0.98.0/linux_amd64/terraform-provider-proxmox_v0.98.0"
-digest = "sha256:a5a76501f8325068c972bff3e80cf877556292834e92324297e8d30fb4ab444f"
-
-[[artifacts]]
-path = ".terraform/providers/registry.opentofu.org/bpg/proxmox/0.98.0/linux_amd64.lock"
-digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-[[artifacts]]
-path = ".terraform.lock.hcl"
-digest = "sha256:1936aefac902f77b492259cbf9649c367de2fa7c0e743ca47614e9acbefabea3"
-
-[[artifacts]]
 path = "desired-state.json"
-digest = "sha256:145826c1ea1f62b38fdc9f45099b138bd527e54df02774a468bf15e0c0a647db"
+digest = "sha256:50bb5c3bc1e97a60964b25b06c31bf2fe436ceb8bf27b8f75933041dec596cd7"
+
+[[artifacts]]
+path = "terraform.tfvars.json"
+digest = "sha256:f0d6541ccf28de385d5233111aef6a44223c762f234d70db0b8be666dce541df"
+
+[[artifacts]]
+path = "variables.tf.json"
+digest = "sha256:e0f0ac6c6133a36a7f9da541e1de6b0c2b137a51e1c5872bc80ea9b151571af8"
+
+[[artifacts]]
+path = "provider.tf.json"
+digest = "sha256:25a648e2113f1c363bf2c68671f1a2dd0623034bf374400836c7c6b9f620f597"
 
 [[artifacts]]
 path = "main.tf.json"
-digest = "sha256:ed523e758721b56ad44e917ea54394715d4e9fa8e98c625d89965db30dbeb8d3"
+digest = "sha256:df9cfdfbf3ea5393f6e1dce10d1e4600627cdb0cc3f4a632f9ddd3350a988fd8"
 
 [[artifacts]]
-path = "modules/lxc/main.tf.json"
-digest = "sha256:21264962dac5f34587321ba1f91485e88ae695a2389dd6d6511da48b00c95d51"
+path = "outputs.tf.json"
+digest = "sha256:73070ede9ee5430938a2d24e6f23497ec5bb9f67bf8951c45ab849e54247aa9e"
 
 [[artifacts]]
-path = "modules/lxc/outputs.tf.json"
-digest = "sha256:a8b4e971e9976340db30491799641e9a4b25177a27171fb9cdfe1f2b6295d2e4"
-
-[[artifacts]]
-path = "modules/lxc/variables.tf.json"
-digest = "sha256:3bf2e8f61ed0a14865dd622bb89eac819556f929e386ae113312803d27211736"
+path = "modules/vm/variables.tf.json"
+digest = "sha256:868ea0c53f2a254b4159e821401828df8fbccd07d11ca2ecd869b9bebd925818"
 
 [[artifacts]]
 path = "modules/vm/main.tf.json"
@@ -83,88 +63,20 @@ path = "modules/vm/outputs.tf.json"
 digest = "sha256:ce471fdc203476f7795966c853c81c56db6369f29294c63b142c9609e5bae3f9"
 
 [[artifacts]]
-path = "modules/vm/variables.tf.json"
-digest = "sha256:868ea0c53f2a254b4159e821401828df8fbccd07d11ca2ecd869b9bebd925818"
+path = "modules/lxc/variables.tf.json"
+digest = "sha256:3bf2e8f61ed0a14865dd622bb89eac819556f929e386ae113312803d27211736"
 
 [[artifacts]]
-path = "outputs.tf.json"
-digest = "sha256:73070ede9ee5430938a2d24e6f23497ec5bb9f67bf8951c45ab849e54247aa9e"
+path = "modules/lxc/main.tf.json"
+digest = "sha256:21264962dac5f34587321ba1f91485e88ae695a2389dd6d6511da48b00c95d51"
 
 [[artifacts]]
-path = "provider.tf.json"
-digest = "sha256:25a648e2113f1c363bf2c68671f1a2dd0623034bf374400836c7c6b9f620f597"
+path = "modules/lxc/outputs.tf.json"
+digest = "sha256:a8b4e971e9976340db30491799641e9a4b25177a27171fb9cdfe1f2b6295d2e4"
 
 [[artifacts]]
-path = "resources/kodi-htpc/kodi.env"
-digest = "sha256:d2a79773bf12d9da3104709a6b1bb9d6f6d3f37fdad4335e49aafe1cf55be3a8"
-
-[[artifacts]]
-path = "resources/kodi-htpc/scripts/bootstrap-kodi-jellyfin.sh"
-digest = "sha256:5b664328771e57a7daed15029ce1bc20fe51617d18b2a85f70ccddcdb479f817"
-
-[[artifacts]]
-path = "resources/kodi-htpc/scripts/bootstrap-kodi.sh"
-digest = "sha256:63a44ca53fe0a1ba79bbd21685275fed6eaea8f00535cf8aaace79f57d065112"
-
-[[artifacts]]
-path = "resources/kodi-htpc/scripts/bootstrap-node.sh"
-digest = "sha256:3a9d819e73a8ad03772b7d1af06a06020f28b71eff70c1df2a1bb7788cec2164"
-
-[[artifacts]]
-path = "resources/kodi-htpc/scripts/bootstrap-tailscale.sh"
-digest = "sha256:042b1f3ed088144ea9c61dde4dad6fdf1b66c14ddb0be737602a5c8a048f56b7"
-
-[[artifacts]]
-path = "resources/kodi-htpc/tailscale-setup.sh"
-digest = "sha256:f67db7c943055e292634be123e160445c2177a8465b02186e519ecc42b0dc3d4"
-
-[[artifacts]]
-path = "resources/media-stack/caddyfile.media"
-digest = "sha256:f77422495009b3ec39238e4599f7901d42a72629e7d845a9093383e230ed44fc"
-
-[[artifacts]]
-path = "resources/media-stack/docker-compose.media"
-digest = "sha256:b8fb7a8b0e06cc3d737442b0420c594851e52e7932fcdb84a7ee0393f4450a53"
-
-[[artifacts]]
-path = "resources/media-stack/media-index.html"
-digest = "sha256:171d313d1932374919748e830aa02888cceb12885708e03f7a1347ac0799ede5"
-
-[[artifacts]]
-path = "resources/media-stack/media.env"
-digest = "sha256:176f57dbc17b53df87e2e87a22031518923b1d03ffaf8cf803bd99ecc86b6d45"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-arr.sh"
-digest = "sha256:af8a8d8f8c7444c60b427319317c7829e8936dec07172167bb60639865f24cd5"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-jellyfin.sh"
-digest = "sha256:aa7d657692419fbe2fb1034a5480af65e2ea24b5747117725a30dd4b1a59005e"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-media.sh"
-digest = "sha256:a4b4dcc279feeb36585344e0dd590e7dd065370797a6347578647f4029677e73"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-node.sh"
-digest = "sha256:3a9d819e73a8ad03772b7d1af06a06020f28b71eff70c1df2a1bb7788cec2164"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-qbittorrent.sh"
-digest = "sha256:d28c6f3c51469c355e79149281261aa64a378e0c5367b48df2a02ad6b4f406bf"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-tailscale.sh"
-digest = "sha256:042b1f3ed088144ea9c61dde4dad6fdf1b66c14ddb0be737602a5c8a048f56b7"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-ui-routing.sh"
-digest = "sha256:e8bd79e956e5a20d03f870b00c0b8ebd8aa2532421ab4aa2f420c14ee350fcc2"
-
-[[artifacts]]
-path = "resources/media-stack/tailscale-setup.sh"
-digest = "sha256:0dcdbe360dc27ca9432d95a5d6c3c102c861b4608c7ab6c006665735820d13cc"
+path = "resources/tailscale-gateway/tailscale-setup.sh"
+digest = "sha256:3329efaebaf0b42e4d18d1047020f5e5cdcec35939e81bff78ec90b42998ac1f"
 
 [[artifacts]]
 path = "resources/tailscale-gateway/scripts/bootstrap-node.sh"
@@ -175,25 +87,73 @@ path = "resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"
 digest = "sha256:042b1f3ed088144ea9c61dde4dad6fdf1b66c14ddb0be737602a5c8a048f56b7"
 
 [[artifacts]]
-path = "resources/tailscale-gateway/tailscale-setup.sh"
-digest = "sha256:71104ebea0d8a20f4fcb7e35b0362e96bbf6b921d8d52df73922064498c3bb03"
+path = "resources/media-stack/docker-compose.media"
+digest = "sha256:eb6a23650fdb01e8e24d2d6f39f140e228407afb12911cb1b0312b726351e5b4"
 
 [[artifacts]]
-path = "terraform.tfstate"
-digest = "sha256:76802c248d1c8f5b2e218d6c6f295680f663b14b9af1992d6c6a2420137a44e7"
+path = "resources/media-stack/media.env"
+digest = "sha256:288809193bcbcb24a8d633d4a47c2286b995a0011969ba953255d7bff97deb7b"
 
 [[artifacts]]
-path = "terraform.tfstate.1776751520.backup"
-digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153fd"
+path = "resources/media-stack/caddyfile.media"
+digest = "sha256:f77422495009b3ec39238e4599f7901d42a72629e7d845a9093383e230ed44fc"
 
 [[artifacts]]
-path = "terraform.tfstate.backup"
-digest = "sha256:0e28c7d07d5a787d21372164e983ba11e3a7e0daeaa814788dfccd8dc1d95f8f"
+path = "resources/media-stack/media-index.html"
+digest = "sha256:82eae59671cd2b4c9dbcd10a9463d5076c9a881e0a0c29e9f90ccac84a94d079"
 
 [[artifacts]]
-path = "terraform.tfvars.json"
-digest = "sha256:473fa6e4d307070fba3ceb4a76036b5ec6174973ef80bd5e89eac5c9c47bdcf7"
+path = "resources/media-stack/tailscale-setup.sh"
+digest = "sha256:784231a893c08874cbed4b971f4f61706142f2d9ac965428a973dc28c6647a8e"
 
 [[artifacts]]
-path = "variables.tf.json"
-digest = "sha256:e0f0ac6c6133a36a7f9da541e1de6b0c2b137a51e1c5872bc80ea9b151571af8"
+path = "resources/media-stack/scripts/bootstrap-node.sh"
+digest = "sha256:3a9d819e73a8ad03772b7d1af06a06020f28b71eff70c1df2a1bb7788cec2164"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-tailscale.sh"
+digest = "sha256:042b1f3ed088144ea9c61dde4dad6fdf1b66c14ddb0be737602a5c8a048f56b7"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-media.sh"
+digest = "sha256:a4b4dcc279feeb36585344e0dd590e7dd065370797a6347578647f4029677e73"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-jellyfin.sh"
+digest = "sha256:aa7d657692419fbe2fb1034a5480af65e2ea24b5747117725a30dd4b1a59005e"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-qbittorrent.sh"
+digest = "sha256:d28c6f3c51469c355e79149281261aa64a378e0c5367b48df2a02ad6b4f406bf"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-arr.sh"
+digest = "sha256:af8a8d8f8c7444c60b427319317c7829e8936dec07172167bb60639865f24cd5"
+
+[[artifacts]]
+path = "resources/media-stack/scripts/bootstrap-ui-routing.sh"
+digest = "sha256:e8bd79e956e5a20d03f870b00c0b8ebd8aa2532421ab4aa2f420c14ee350fcc2"
+
+[[artifacts]]
+path = "resources/kodi-htpc/kodi.env"
+digest = "sha256:f12e4160561b8f8a57fa57ebf81f61657e897b1ccd9a9d5f6de9205dd624e39f"
+
+[[artifacts]]
+path = "resources/kodi-htpc/tailscale-setup.sh"
+digest = "sha256:65c144148d34c8ba3b27951b5a0dcc8b9ce1bf17dd815f44f90e27ab75d2549f"
+
+[[artifacts]]
+path = "resources/kodi-htpc/scripts/bootstrap-node.sh"
+digest = "sha256:3a9d819e73a8ad03772b7d1af06a06020f28b71eff70c1df2a1bb7788cec2164"
+
+[[artifacts]]
+path = "resources/kodi-htpc/scripts/bootstrap-tailscale.sh"
+digest = "sha256:042b1f3ed088144ea9c61dde4dad6fdf1b66c14ddb0be737602a5c8a048f56b7"
+
+[[artifacts]]
+path = "resources/kodi-htpc/scripts/bootstrap-kodi.sh"
+digest = "sha256:63a44ca53fe0a1ba79bbd21685275fed6eaea8f00535cf8aaace79f57d065112"
+
+[[artifacts]]
+path = "resources/kodi-htpc/scripts/bootstrap-kodi-jellyfin.sh"
+digest = "sha256:5b664328771e57a7daed15029ce1bc20fe51617d18b2a85f70ccddcdb479f817"

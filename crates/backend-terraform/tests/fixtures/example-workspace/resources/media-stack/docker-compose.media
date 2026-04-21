@@ -60,3 +60,47 @@ services:
     volumes:
       - "${MEDIA_PATH}:/media"
       - "${CONFIG_PATH}/qbittorrent:/config"
+  jellyseerr:
+    image: "fallenbagel/jellyseerr:latest"
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    volumes:
+      - "${CONFIG_PATH}/jellyseerr:/app/config"
+  bazarr:
+    image: "lscr.io/linuxserver/bazarr:latest"
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "6767:6767"
+    volumes:
+      - "${MEDIA_PATH}:/media"
+      - "${CONFIG_PATH}/bazarr:/config"
+  homarr:
+    image: "ghcr.io/homarr-labs/homarr:latest"
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "7575:7575"
+    volumes:
+      - "${CONFIG_PATH}/homarr:/appdata"
+  jellystat-db:
+    image: "postgres:15-alpine"
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - "${CONFIG_PATH}/jellystat-db:/var/lib/postgresql/data"
+  jellystat:
+    image: "cyfershepard/jellystat:latest"
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - "${CONFIG_PATH}/jellystat:/app/backend/backup-data"
