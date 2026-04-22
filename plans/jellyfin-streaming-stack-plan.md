@@ -62,7 +62,10 @@ Service paths:
 
 - Jellyfin: `/jellyfin`
 - Jellio config UI: `/jellyfin/jellio/configure`
-- Jellio addon manifest (static, pre-generated): `/jellyfin/jellio/${JELLIO_CONFIG_B64}/manifest.json` (generated during apply; persisted as `JELLIO_STREMIO_MANIFEST_URL`)
+- Jellio addon manifest (static, pre-generated): `/jellyfin/jellio/${JELLIO_CONFIG_B64}/manifest.json`
+  - generated for LAN and tailnet during apply
+  - persisted as `JELLIO_STREMIO_MANIFEST_URL_LAN` and `JELLIO_STREMIO_MANIFEST_URL_TAILNET`
+  - optional Cloudflare manifest persisted as `JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE`
 - Streamyfin notifications endpoint: `/jellyfin/Streamyfin/notification`
 
 ### Request/Data Flow Diagrams
@@ -96,6 +99,9 @@ Client search request
 Stremio (on tailnet) installs addon from:
   https://${TAILSCALE_DNS_NAME}/jellyfin/jellio/${JELLIO_CONFIG_B64}/manifest.json
 
+Stremio (on LAN, no Tailscale) installs addon from:
+  http://media-stack.${domain}/jellyfin/jellio/${JELLIO_CONFIG_B64}/manifest.json
+
 Stremio browse:
   -> /catalog/* or /meta/* on that same base
   -> Caddy -> Jellyfin -> Jellio+ plugin controllers -> Jellyfin library APIs
@@ -122,6 +128,20 @@ Use the repo’s existing search domain (`home.arpa`) and VM name:
 
 All services are reachable through the single host + paths above.
 
+### Samsung TV (Stremio) operational notes
+
+- The Samsung (Tizen) Stremio client typically relies on your Stremio account sync rather than offering a robust “paste manifest URL” flow on the TV itself.
+- The reliable workflow is:
+  1. Open the manifest URL on a phone/PC where you are logged into Stremio (or `web.stremio.com`).
+  2. Add/install the addon.
+  3. On the Samsung TV Stremio app, trigger sync and test playback.
+
+This plan supports three manifest URL types so you can pick what your Samsung client accepts:
+
+- LAN HTTP manifest: works if the Samsung app accepts `http://` addon manifests and the TV can reach the LAN hostname.
+- Tailnet HTTPS manifest: works if the Samsung TV device is on Tailscale (not your scenario).
+- Optional Cloudflare HTTPS manifest: works without Tailscale on the TV, but is publicly reachable and adds a Cloudflare dependency (disabled by default).
+
 ## Jellysearch: Production Notes and Risk
 
 Jellysearch upstream warning (must be acknowledged in production):
@@ -133,6 +153,24 @@ Mitigation strategy in this plan:
 - Expose Jellyfin primarily via Tailscale (private tailnet) and LAN only.
 - Create a dedicated “stremio” Jellyfin user for the addon with limited libraries; do not use admin tokens in Stremio.
 - Avoid exposing Jellysearch directly to the public internet.
+
+## Stremio + Jellyseerr: What’s Possible
+
+What you can achieve without writing a custom Stremio addon:
+
+- Global search and discovery happens in Stremio via Cinemeta (and other metadata addons).
+- Playback is provided by Jellio+ when the media exists in Jellyfin.
+- If the media does not exist, Jellio+ can return a “Request via Jellyseerr” stream entry for IMDB-based ids (`tt...`), which triggers a Jellyseerr request.
+- After Jellyseerr fulfills the request and Jellyfin indexes the media, the same Stremio title becomes streamable via Jellio+ (the stream endpoint checks Jellyfin each time).
+
+What you cannot do with stock Jellio+ today:
+
+- Replace Stremio’s search UI to be “Jellyseerr search” (Jellio+ catalogs/search are library-scoped; they do not query Jellyseerr discover/search endpoints).
+- Auto-play on the TV “the moment it becomes available” without user action (Stremio does not provide an addon-driven push mechanism). You can approximate this with notifications (see below) and a manual retry.
+
+Optional future enhancement (custom dev):
+
+- Add Jellyseerr-backed Stremio catalogs (Trending, Popular, Requested, etc.) by extending Jellio+ to call Jellyseerr `/api/v1/discover/*` and `/api/v1/request` endpoints and returning `tt...` ids. This is feasible but out of scope for this implementation plan.
 
 ## vmctl Integration (Concrete Repo Changes)
 
@@ -252,17 +290,38 @@ MEILI_MASTER_KEY=
 # Streamyfin + Jellio bootstrap
 JELLYFIN_STREMIO_USER=stremio
 JELLYFIN_STREMIO_PASSWORD=
-JELLIO_STREMIO_MANIFEST_URL=
+JELLIO_STREMIO_MANIFEST_URL_LAN=
+JELLIO_STREMIO_MANIFEST_URL_TAILNET=
+JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE=
+
+# Optional: Cloudflare Tunnel support (disabled unless CLOUDFLARED_TOKEN is set and cloudflared service is enabled)
+CLOUDFLARE_PUBLIC_BASE_URL=
+CLOUDFLARED_TOKEN=
+
+# Jellyseerr request integration for Jellio+ (auto-generated and injected into the Jellyseerr container as API_KEY)
+JELLYSEERR_API_KEY=
+JELLYSEERR_INTERNAL_URL=http://jellyseerr:5055
 ```
 
 Rationale:
 
 - `MEILI_MASTER_KEY` is generated once and reused by `meilisearch` and `jellysearch`.
-- `JELLIO_STREMIO_MANIFEST_URL` is computed during apply and preserved for subsequent runs.
+- Jellio manifest URLs are computed during apply and preserved for subsequent runs:
+  - `JELLIO_STREMIO_MANIFEST_URL_LAN`
+  - `JELLIO_STREMIO_MANIFEST_URL_TAILNET`
+  - optional `JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE`
 
 `bootstrap-media.sh` must be updated so these values are preserved across reruns:
 
-- Extend the `preserve = {...}` set to include `MEILI_MASTER_KEY`, `JELLYFIN_STREMIO_PASSWORD`, `JELLIO_STREMIO_MANIFEST_URL`.
+- Extend the `preserve = {...}` set to include:
+  - `MEILI_MASTER_KEY`
+  - `JELLYFIN_STREMIO_PASSWORD`
+  - `JELLIO_STREMIO_MANIFEST_URL_LAN`
+  - `JELLIO_STREMIO_MANIFEST_URL_TAILNET`
+  - `JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE`
+  - `CLOUDFLARE_PUBLIC_BASE_URL`
+  - `CLOUDFLARED_TOKEN`
+  - `JELLYSEERR_API_KEY`
 
 #### 3.2 `packs/templates/docker-compose.media.hbs` (support per-service environment)
 
@@ -360,11 +419,15 @@ Templates are rendered before bootstrap scripts run, but the Jellio Stremio mani
 
 Bootstrap writes:
 
-- `/opt/media/config/caddy/ui-index/jellio-manifest.url` (single line: the full manifest URL)
+- `/opt/media/config/caddy/ui-index/jellio-manifest.lan.url` (single line: the LAN manifest URL)
+- `/opt/media/config/caddy/ui-index/jellio-manifest.tailnet.url` (single line: the tailnet manifest URL)
+- `/opt/media/config/caddy/ui-index/jellio-manifest.cloudflare.url` (single line: the Cloudflare manifest URL, only when enabled)
 
 Portal HTML loads it at runtime from:
 
-- `GET /jellio-manifest.url` (served by Caddy’s static file_server at `/`)
+- `GET /jellio-manifest.lan.url` (served by Caddy’s static file_server at `/`)
+- `GET /jellio-manifest.tailnet.url` (served by Caddy’s static file_server at `/`)
+- `GET /jellio-manifest.cloudflare.url` (served by Caddy’s static file_server at `/`, only present when enabled)
 
 Portal snippet (path-prefix links + dynamic Jellio manifest link):
 
@@ -395,21 +458,40 @@ Portal snippet (path-prefix links + dynamic Jellio manifest link):
       <div>Configuration UI for Stremio addon generation</div>
     </li>
     <li>
-      <a id="jellio-manifest-link" href="#">Stremio Manifest (pre-generated)</a>
-      <div>Paste this into Stremio Addons, or open it on a device with Stremio installed.</div>
+      <a id="jellio-manifest-lan-link" href="#">Stremio Manifest (LAN HTTP)</a>
+      <div>Use this if your device is on the LAN and Stremio accepts http manifests.</div>
+    </li>
+    <li>
+      <a id="jellio-manifest-tailnet-link" href="#">Stremio Manifest (Tailnet HTTPS)</a>
+      <div>Use this for devices on Tailscale (works best, private by default).</div>
+    </li>
+    <li>
+      <a id="jellio-manifest-cloudflare-link" href="#">Stremio Manifest (Cloudflare HTTPS, optional)</a>
+      <div>Use this for devices not on Tailscale (public HTTPS; disabled unless configured).</div>
     </li>
   </ul>
   <script>
     (function () {
-      fetch("/jellio-manifest.url", { cache: "no-store" })
-        .then(function (r) { return r.ok ? r.text() : ""; })
-        .then(function (t) {
-          var url = (t || "").trim();
-          if (!url) return;
-          var a = document.getElementById("jellio-manifest-link");
-          if (a) a.href = url;
-        })
-        .catch(function () {});
+      function wire(id, urlPath) {
+        fetch(urlPath, { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.text() : ""; })
+          .then(function (t) {
+            var url = (t || "").trim();
+            var a = document.getElementById(id);
+            if (!a) return;
+            if (!url) {
+              a.style.opacity = "0.4";
+              a.style.pointerEvents = "none";
+              return;
+            }
+            a.href = url;
+          })
+          .catch(function () {});
+      }
+
+      wire("jellio-manifest-lan-link", "/jellio-manifest.lan.url");
+      wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
+      wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
     })();
   </script>
 </body>
@@ -546,43 +628,141 @@ Automated steps:
    - `GET /Library/VirtualFolders` to map to library GUIDs
 2. Set Jellio plugin config via Jellyfin plugin config API:
    - `POST /Plugins/e874be83-fe36-4568-abac-f5ce0574b409/Configuration`
-   - Default this plan to `JellyseerrEnabled = false` (Jellyseerr integration is optional; Stremio streaming works without it).
-   - If you want Jellyseerr requests in Stremio, supply `JELLYSEERR_API_KEY` via `vmctl.toml [env]` and let bootstrap enable it automatically.
+   - If `JELLYSEERR_API_KEY` is present, set:
+     - `JellyseerrEnabled = true`
+     - `JellyseerrUrl = ${JELLYSEERR_INTERNAL_URL}` (internal Docker URL)
+     - `JellyseerrApiKey = ${JELLYSEERR_API_KEY}`
+   - Otherwise set `JellyseerrEnabled = false` and omit Jellyseerr fields in the addon config payloads.
 3. Ensure a dedicated Jellyfin user exists for Stremio addon auth:
    - username: `stremio`
    - password: generated once and preserved in `/opt/media/.env` (`JELLYFIN_STREMIO_PASSWORD`)
 4. Authenticate the `stremio` user:
    - `POST /Users/AuthenticateByName` -> `AccessToken`
-5. Compute the tailnet Jellyfin base URL (used for Stremio access):
+5. Compute the LAN Jellyfin base URL from `JELLYFIN_URL` (this is what LAN clients should use):
+
+   - `JELLYFIN_URL` is already set by vmctl to the canonical external Jellyfin base, e.g. `http://media-stack.home.arpa/jellyfin`
+   - Reuse it for LAN manifest generation:
+
+   ```bash
+   JELLYFIN_LAN_BASE_URL="${JELLYFIN_URL}"
+   ```
+
+6. Compute the tailnet Jellyfin base URL (used for Stremio access):
 
    ```bash
    TAILSCALE_DNS_NAME="$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"Self\"][\"DNSName\"].rstrip(\".\"))')"
    JELLYFIN_TAILNET_BASE_URL="https://${TAILSCALE_DNS_NAME}/jellyfin"
    ```
-6. Build the Jellio base64url config payload:
+
+7. Optional: if Cloudflare tunnel is enabled, define the public Jellyfin base URL (must include `/jellyfin`):
+
+   - `CLOUDFLARE_PUBLIC_BASE_URL` is provided via `.env` and must be a full URL like `https://media.example.com/jellyfin`.
+
+8. Build the Jellio base64url config payload (one per access mode):
+
+   - LAN config: `PublicBaseUrl = ${JELLYFIN_LAN_BASE_URL}`
+   - Tailnet config: `PublicBaseUrl = ${JELLYFIN_TAILNET_BASE_URL}`
+   - Cloudflare config (optional): `PublicBaseUrl = ${CLOUDFLARE_PUBLIC_BASE_URL}`
+   - If Jellyseerr integration is enabled, include `JellyseerrEnabled`, `JellyseerrUrl`, `JellyseerrApiKey` in each payload.
 
 ```json
 {
   "ServerName": "media-stack",
   "AuthToken": "${STREMIO_ACCESS_TOKEN}",
   "LibrariesGuids": ["${LIB_GUID_1}", "${LIB_GUID_2}"],
-  "JellyseerrEnabled": false,
-  "PublicBaseUrl": "${JELLYFIN_TAILNET_BASE_URL}"
+  "JellyseerrEnabled": true,
+  "JellyseerrUrl": "http://jellyseerr:5055",
+  "JellyseerrApiKey": "${JELLYSEERR_API_KEY}",
+  "PublicBaseUrl": "${BASE_URL_FOR_THIS_MANIFEST}"
 }
 ```
 
-7. Base64url-encode the UTF-8 JSON (no padding) and form the manifest URL:
+9. Base64url-encode each UTF-8 JSON (no padding) and form each manifest URL:
 
 ```
-${JELLYFIN_TAILNET_BASE_URL}/jellio/${JELLIO_CONFIG_B64}/manifest.json
+${BASE_URL_FOR_THIS_MANIFEST}/jellio/${JELLIO_CONFIG_B64}/manifest.json
 ```
 
-8. Persist the full manifest URL into `/opt/media/.env` as `JELLIO_STREMIO_MANIFEST_URL` for:
-   - portal display
-   - validation tests
-   - stable idempotence
+10. Persist the manifest URLs into `/opt/media/.env` for stable idempotence:
 
-9. Also write `/opt/media/config/caddy/ui-index/jellio-manifest.url` (same value) so the portal can show it without re-rendering templates.
+- `JELLIO_STREMIO_MANIFEST_URL_LAN`
+- `JELLIO_STREMIO_MANIFEST_URL_TAILNET`
+- `JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE` (only when Cloudflare is enabled)
+
+11. Write URL files for the portal (same values):
+
+- `/opt/media/config/caddy/ui-index/jellio-manifest.lan.url`
+- `/opt/media/config/caddy/ui-index/jellio-manifest.tailnet.url`
+- `/opt/media/config/caddy/ui-index/jellio-manifest.cloudflare.url` (only when Cloudflare is enabled)
+
+12. Persist the *tailnet* manifest URL as the “default” for validation steps that need a single value:
+
+- set `JELLIO_STREMIO_MANIFEST_URL_TAILNET` and use it in validators when a single URL is required.
+
+## Optional: Cloudflare Tunnel (Disabled By Default)
+
+This is optional support for TVs/devices that cannot use Tailscale and cannot install an addon from an `http://` LAN manifest URL.
+
+### Security posture
+
+- Cloudflare makes the addon base URL reachable from the public internet.
+- If enabled, treat this as an internet-facing service:
+  - do not use admin tokens in Stremio
+  - use a dedicated Jellyfin user with only the libraries you intend to expose
+  - keep Jellyfin behind the reverse proxy and do not publish additional ports
+
+### vmctl and pack changes
+
+1. Add a new service pack `packs/services/cloudflared.toml`:
+
+```toml
+name = "cloudflared"
+container_type = "docker"
+
+[image]
+name = "cloudflare/cloudflared"
+tag = "2026.3.0"
+
+[environment]
+TUNNEL_TOKEN = "${CLOUDFLARED_TOKEN}"
+
+[settings]
+command = "tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN}"
+```
+
+2. Extend `packs/templates/docker-compose.media.hbs` to render optional `command` from a service pack:
+
+```hbs
+{{#if settings.command}}
+    command: {{settings.command}}
+{{/if}}
+```
+
+3. Enable Cloudflare tunnel by configuration only:
+
+- add `cloudflared` to the `media-stack` `services = [...]` list
+- set `CLOUDFLARED_TOKEN` in `.env` via `vmctl.toml [env]`
+- set `CLOUDFLARE_PUBLIC_BASE_URL` in `.env` via `vmctl.toml [env]` (must include `/jellyfin`)
+
+## Optional: Notifications (“Available Now”)
+
+Stremio itself won’t auto-refresh, but you can deliver “request completed” notifications to phones/tablets via Streamyfin push notifications:
+
+- Configure Jellyseerr Webhook notifications to call Streamyfin’s notifications endpoint:
+  - endpoint: `${JELLYFIN_TAILNET_BASE_URL}/Streamyfin/notification`
+  - header: `Authorization: MediaBrowser Token="<JELLYFIN_API_KEY>"`
+
+If you want this fully automated, extend provisioning to:
+
+- generate a Jellyfin API key dedicated to Streamyfin notifications
+- set Jellyseerr’s webhook agent configuration to post “Request Available” events to the endpoint
+
+
+### Cloudflare side (required when enabling)
+
+- Create a Cloudflare Tunnel and obtain `CLOUDFLARED_TOKEN`.
+- In the tunnel’s public hostname config, point the hostname to the local service URL `http://caddy:80`.
+- Ensure the hostname you choose matches `CLOUDFLARE_PUBLIC_BASE_URL` (including the `/jellyfin` path on the client side).
 
 ## Streamyfin “Service” Clarification
 
@@ -600,15 +780,14 @@ This meets the “Streamyfin plugin + service” intent without deploying deprec
 ### A) Service Installation
 
 1. Extend service pack schema to support per-service environment variables.
-Update `crates/packs/src/lib.rs` (`ServicePack`) to include `environment`.
-Update `packs/templates/docker-compose.media.hbs` to render `environment:` for each service when present.
-1. Add `packs/services/meilisearch.toml`.
-2. Add `packs/services/jellysearch.toml`.
-3. Add `jellysearch` and `meilisearch` to the `media-stack` service list in `vmctl.toml`.
-4. Update `packs/templates/media.env.hbs` with Jellysearch/Meili env vars and preserved secrets.
-5. Update `packs/scripts/bootstrap-media.sh` to create:
-   - `/opt/media/config/meilisearch`
-6. Add `packs/scripts/bootstrap-jellysearch.sh`.
+2. Update `crates/packs/src/lib.rs` (`ServicePack`) to include `environment`.
+3. Update `packs/templates/docker-compose.media.hbs` to render `environment:` for each service when present.
+4. Add `packs/services/meilisearch.toml`.
+5. Add `packs/services/jellysearch.toml`.
+6. Add `jellysearch` and `meilisearch` to the `media-stack` service list in `vmctl.toml`.
+7. Update `packs/templates/media.env.hbs` with Meili/Jellio/Cloudflare secrets and preserved state.
+8. Update `packs/scripts/bootstrap-media.sh` to create `/opt/media/config/meilisearch` and preserve the new env keys.
+9. Add `packs/scripts/bootstrap-jellysearch.sh`.
 
 ### B) Configuration
 
@@ -623,12 +802,17 @@ Update `packs/templates/docker-compose.media.hbs` to render `environment:` for e
 5. Add `packs/scripts/bootstrap-jellio.sh` to:
    - patch Jellio plugin config
    - create `stremio` user
-   - generate and persist `JELLIO_STREMIO_MANIFEST_URL`
+   - generate and persist `JELLIO_STREMIO_MANIFEST_URL_LAN` and `JELLIO_STREMIO_MANIFEST_URL_TAILNET`
+   - optionally generate and persist `JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE` when Cloudflare is enabled
 
 ### C) Integration
 
-1. Ensure Streamyfin plugin’s `seerrServerUrl` points at your Jellyseerr URL (recommended tailnet-friendly value: `http://${TAILSCALE_DNS_NAME}:5055`).
-2. Ensure Jellio plugin’s `PublicBaseUrl` points at the tailnet HTTPS Jellyfin base (`https://${TAILSCALE_DNS_NAME}/jellyfin`).
+1. Ensure Streamyfin plugin’s `seerrServerUrl` points at your Jellyseerr URL.
+   - Tailnet-friendly value (no extra exposure): `https://${TAILSCALE_DNS_NAME}/jellyseerr` if you also route Jellyseerr through Caddy, otherwise keep it empty.
+2. Ensure Jellio manifests are generated for:
+   - LAN: `JELLYFIN_LAN_BASE_URL = ${JELLYFIN_URL}`
+   - Tailnet: `JELLYFIN_TAILNET_BASE_URL = https://${TAILSCALE_DNS_NAME}/jellyfin`
+   - Cloudflare (optional): `CLOUDFLARE_PUBLIC_BASE_URL` (must include `/jellyfin`)
 3. Ensure the Jellysearch *container env* is set via its service pack (not global `.env`) to:
    - `JELLYFIN_URL=http://jellyfin:8096`
    - `JELLYFIN_CONFIG_DIR=/config`
@@ -658,7 +842,8 @@ Add a single end-to-end validator script `packs/scripts/bootstrap-validate-strea
 5. Jellysearch wiring works:
    - `GET http://127.0.0.1/jellyfin/Items?SearchTerm=test&Limit=1` returns 200
 6. Jellio manifest resolves:
-   - `curl -fsSL "$JELLIO_STREMIO_MANIFEST_URL" | python3 -c 'import json,sys; j=json.load(sys.stdin); assert \"catalog\" in j[\"resources\"] or True'`
+   - `curl -fsSL "$JELLIO_STREMIO_MANIFEST_URL_TAILNET" | python3 -c 'import json,sys; j=json.load(sys.stdin); assert \"resources\" in j'`
+   - `curl -fsSL "$JELLIO_STREMIO_MANIFEST_URL_LAN" | python3 -c 'import json,sys; j=json.load(sys.stdin); assert \"resources\" in j'`
 7. Tailnet exposure asserted:
    - `tailscale status --json` shows backend `Running|Starting`
    - `tailscale serve status` contains the configured target (`http://127.0.0.1:80`)
@@ -701,8 +886,9 @@ Add a single end-to-end validator script `packs/scripts/bootstrap-validate-strea
   - streams return 401 due to token problems
 - Tests:
   - HTTP: `GET /jellyfin/jellio/configure` returns 200 HTML
-  - HTTP: `GET $JELLIO_STREMIO_MANIFEST_URL` returns JSON with `resources`
-  - HTTP: `GET /jellyfin/jellio/${JELLIO_CONFIG_B64}/catalog/movie/${MOVIES_LIBRARY_GUID}/skip=0.json` returns 200 (basic browse)
+  - HTTP: `GET $JELLIO_STREMIO_MANIFEST_URL_TAILNET` returns JSON with `resources`
+  - HTTP: `GET $JELLIO_STREMIO_MANIFEST_URL_LAN` returns JSON with `resources`
+  - HTTP: `GET /jellyfin/jellio/${JELLIO_CONFIG_B64}/catalog/movie/${MOVIES_LIBRARY_GUID}/skip=0.json` returns 200 (basic browse, using either base)
 - Fix:
   - plugin install + config patch
   - ensure stremio user token generation and persistence
@@ -717,21 +903,25 @@ System is complete when, after a fresh `vmctl apply` and on subsequent reruns:
 - Streamyfin plugin config is set (no placeholder values; Seerr URL is correct)
 - Jellysearch + Meilisearch containers are running and Jellyfin search requests are routed to Jellysearch when `searchTerm` is present
 - Jellio+ plugin is installed, configured with selected libraries and correct `PublicBaseUrl`
-- A stable, pre-generated Stremio manifest URL exists (`JELLIO_STREMIO_MANIFEST_URL`) and is reachable over Tailscale HTTPS
+- Stable Stremio manifest URLs exist for:
+  - LAN (`JELLIO_STREMIO_MANIFEST_URL_LAN`)
+  - Tailnet (`JELLIO_STREMIO_MANIFEST_URL_TAILNET`)
+  - optional Cloudflare (`JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE`)
 - All functionality works with:
   - LAN base `http://media-stack.${domain}`
   - Tailnet base `https://${TAILSCALE_DNS_NAME}`
-- No Cloudflare dependency exists anywhere in the stack
+- Cloudflare is not required for default operation (Cloudflare tunnel is optional and disabled unless explicitly enabled)
+- Cloudflare tunnel support exists but is disabled unless explicitly enabled by config
 - Provisioning is zero-touch and idempotent
 
-## Cloudflare Tunnel Replacement (Tradeoffs and Why Tailscale Works)
+## Tradeoffs: Tailscale vs LAN vs Optional Cloudflare
 
 The Jellio+ README recommends Cloudflare Tunnel because it provides:
 
 - publicly reachable HTTPS without opening router ports
 - a stable hostname and valid certificates for clients like Stremio
 
-This plan replaces it with Tailscale because:
+This plan defaults to Tailscale because:
 
 - `tailscale serve` provides trusted HTTPS on a stable tailnet DNS name (`.ts.net`) without Cloudflare
 - the addon stays private to the tailnet (reduced attack surface)
@@ -742,4 +932,4 @@ Tradeoffs:
 - With Tailscale, every Stremio device must be on the tailnet (Tailscale client installed/logged in), including TVs/streaming boxes.
 - Cloudflare Tunnel can serve devices without a tailnet client, but it makes the addon internet-accessible and adds Cloudflare as an operational dependency.
 
-Chosen approach (Tailscale) matches the stated constraint: “must NOT rely on Cloudflare (prefer Tailscale)” and keeps the addon private while still satisfying Stremio’s HTTPS expectations.
+Chosen default (Tailscale) matches the stated constraint: “must NOT rely on Cloudflare (prefer Tailscale)” and keeps the addon private while still satisfying Stremio’s HTTPS expectations. The LAN HTTP manifest exists for convenience on trusted networks, and Cloudflare is available as an explicit opt-in escape hatch for TVs that require public HTTPS.
