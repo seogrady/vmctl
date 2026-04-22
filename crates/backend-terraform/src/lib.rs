@@ -1861,6 +1861,13 @@ mod tests {
         assert!(script.contains("settings[\"jellyfin\"]"));
         assert!(script.contains("settings[\"sonarr\"]"));
         assert!(script.contains("settings[\"radarr\"]"));
+        assert!(script.contains("JELLYFIN_INTERNAL_URL"));
+        assert!(script.contains("SONARR_INTERNAL_URL"));
+        assert!(script.contains("RADARR_INTERNAL_URL"));
+        assert!(script.contains("SONARR_EXTERNAL_URL"));
+        assert!(script.contains("RADARR_EXTERNAL_URL"));
+        assert!(script.contains("build_external_url("));
+        assert!(script.contains("\"externalHostname\""));
         assert!(script.contains("jellyseerr failed to finish initialization bootstrap"));
     }
 
@@ -1872,6 +1879,12 @@ mod tests {
         assert!(script.contains("QBIT_USERNAME = os.environ.get(\"QBITTORRENT_USERNAME\""));
         assert!(script.contains("QBIT_PASSWORD = os.environ.get(\"QBITTORRENT_PASSWORD\""));
         assert!(script.contains("request(\"PUT\", f\"{url}/api/v3/downloadclient/{item['id']}\""));
+        assert!(script.contains("PROWLARR_INTERNAL_URL"));
+        assert!(script.contains("ensure_default_indexers"));
+        assert!(script.contains("existing_names = {item.get(\"name\") for item in existing if item.get(\"name\")}"));
+        assert!(script.contains("\"Nyaa.si\""));
+        assert!(script.contains("\"The Cowboy TV\""));
+        assert!(script.contains("\"YTS\""));
     }
 
     #[test]
@@ -1883,6 +1896,8 @@ mod tests {
         assert!(script.contains("install -m 0644 \"$RESOURCE_DIR/media.env\" \"$STACK_DIR/.env\""));
         assert!(script.contains("MEDIA_SERVICES_CSV="));
         assert!(script.contains("service_enabled()"));
+        assert!(script.contains("sync_template_env_defaults()"));
+        assert!(script.contains("sync_template_env_defaults \"$RESOURCE_DIR/media.env\""));
         assert!(!script.contains("chown -R 1000:1000 \"$STACK_DIR/config\""));
         assert!(script.contains("chown -R 70:70 \"$STACK_DIR/config/jellystat-db\""));
         assert!(script.contains("recover_jellystat_db()"));
@@ -1894,9 +1909,24 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-homarr.sh"
         );
-        assert!(script.contains("node /app/apps/cli/cli.cjs users list"));
-        assert!(script.contains("node /app/apps/cli/cli.cjs recreate-admin --username"));
-        assert!(script.contains("node /app/apps/cli/cli.cjs users update-password"));
+        assert!(script.contains("homarr_db_query()"));
+        assert!(script.contains("run_homarr_cli recreate-admin --username"));
+        assert!(script.contains("run_homarr_cli users update-password"));
+        assert!(script.contains("run_homarr_cli()"));
+        assert!(script.contains("UPDATE onboarding SET previous_step = step, step = 'completed'"));
+    }
+
+    #[test]
+    fn media_jellystat_bootstrap_configures_jellyfin_and_disables_login() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellystat.sh"
+        );
+        assert!(script.contains("if ! service_enabled \"jellystat\" || ! service_enabled \"jellystat-db\"; then"));
+        assert!(script.contains("/auth/createuser"));
+        assert!(script.contains("/auth/configSetup"));
+        assert!(script.contains("JELLYFIN_INTERNAL_URL"));
+        assert!(script.contains("sha3_512"));
+        assert!(script.contains("UPDATE app_config SET \"REQUIRE_LOGIN\" = false"));
     }
 
     #[test]
@@ -2029,6 +2059,12 @@ mod tests {
             &root.join("generated/resources/media-stack/scripts/bootstrap-jellyfin.sh"),
             include_str!(
                 "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyfin.sh"
+            ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/scripts/bootstrap-jellystat.sh"),
+            include_str!(
+                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellystat.sh"
             ),
         );
         assert_file_fixture(

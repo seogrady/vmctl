@@ -144,7 +144,25 @@ def app_base(url, discovered_base):
 
 def ensure_prowlarr_app_sync(prowlarr_url, prowlarr_key, arr_name, arr_url, arr_key):
     apps = request("GET", f"{prowlarr_url}/api/v1/applications", prowlarr_key, allow=()) or []
-    if any(app.get("name") == arr_name for app in apps):
+    for app in apps:
+        if app.get("name") != arr_name:
+            continue
+        updated = dict(app)
+        fields = updated.get("fields", [])
+        desired = {
+            "prowlarrUrl": os.environ.get("PROWLARR_INTERNAL_URL", "http://prowlarr:9696"),
+            "baseUrl": arr_url,
+            "apiKey": arr_key,
+            "syncCategories": [5000, 5030, 5040],
+        }
+        changed = False
+        for field in fields:
+            name = field.get("name")
+            if name in desired and field.get("value") != desired[name]:
+                field["value"] = desired[name]
+                changed = True
+        if changed:
+            request("PUT", f"{prowlarr_url}/api/v1/applications/{app['id']}", prowlarr_key, updated)
         return
     payload = {
         "name": arr_name,
@@ -153,13 +171,37 @@ def ensure_prowlarr_app_sync(prowlarr_url, prowlarr_key, arr_name, arr_url, arr_
         "configContract": f"{arr_name}Settings",
         "enable": True,
         "fields": [
-            {"name": "prowlarrUrl", "value": prowlarr_url},
+            {"name": "prowlarrUrl", "value": os.environ.get("PROWLARR_INTERNAL_URL", "http://prowlarr:9696")},
             {"name": "baseUrl", "value": arr_url},
             {"name": "apiKey", "value": arr_key},
             {"name": "syncCategories", "value": [5000, 5030, 5040]},
         ],
     }
     request("POST", f"{prowlarr_url}/api/v1/applications", prowlarr_key, payload, allow=(400, 409))
+
+
+def ensure_default_indexers(prowlarr_url, prowlarr_key):
+    existing = request("GET", f"{prowlarr_url}/api/v1/indexer", prowlarr_key, allow=()) or []
+    existing_names = {item.get("name") for item in existing if item.get("name")}
+
+    schemas = request("GET", f"{prowlarr_url}/api/v1/indexer/schema", prowlarr_key, allow=()) or []
+    profiles = request("GET", f"{prowlarr_url}/api/v1/appProfile", prowlarr_key, allow=()) or []
+    profile_id = profiles[0]["id"] if profiles else 1
+
+    preferred = ["Nyaa.si", "1337x", "EZTV", "The Cowboy TV", "YTS"]
+    selected = [
+        schema for schema in schemas
+        if schema.get("name") in preferred and schema.get("name") not in existing_names
+    ]
+    if not selected:
+        return
+
+    for schema in selected:
+        candidate = dict(schema)
+        candidate["enable"] = True
+        candidate["priority"] = 25
+        candidate["appProfileId"] = profile_id
+        request("POST", f"{prowlarr_url}/api/v1/indexer", prowlarr_key, candidate, allow=(400, 409))
 
 
 def ensure_indexer_sync_clients(prowlarr_url, prowlarr_key):
@@ -225,12 +267,14 @@ def ensure_qbittorrent_download_client(app, url, api_key, category):
 apps = {
     "sonarr": {
         "url": os.environ.get("SONARR_URL", "http://sonarr:8989"),
+        "internal_url": os.environ.get("SONARR_INTERNAL_URL", "http://sonarr:8989"),
         "base": os.environ.get("SONARR_BASE_URL", ""),
         "root": "/media/tv",
         "category": "tv",
     },
     "radarr": {
         "url": os.environ.get("RADARR_URL", "http://radarr:7878"),
+        "internal_url": os.environ.get("RADARR_INTERNAL_URL", "http://radarr:7878"),
         "base": os.environ.get("RADARR_BASE_URL", ""),
         "root": "/media/movies",
         "category": "movies",
@@ -244,13 +288,14 @@ for app, cfg in apps.items():
     api_url = f"{root}{discovered_base}"
     ensure_root_folder(api_url, key, cfg["root"])
     ensure_qbittorrent_download_client(app, api_url, key, cfg["category"])
-    resolved[app] = {"url": app_base(cfg["url"], cfg["base"]), "key": key}
+    resolved[app] = {"url": app_base(cfg["internal_url"], cfg["base"]), "key": key}
 
 prowlarr_url = os.environ.get("PROWLARR_URL", "http://localhost:9696")
 prowlarr_base = os.environ.get("PROWLARR_BASE_URL", "")
 prowlarr_key = read_api_key("prowlarr")
 prowlarr_root, prowlarr_discovered_base = detect_api_base("prowlarr", prowlarr_url, prowlarr_key, "/api/v1", prowlarr_base)
 prowlarr_api = f"{prowlarr_root}{prowlarr_discovered_base}"
+ensure_default_indexers(prowlarr_api, prowlarr_key)
 
 for app_name, values in resolved.items():
     ensure_prowlarr_app_sync(

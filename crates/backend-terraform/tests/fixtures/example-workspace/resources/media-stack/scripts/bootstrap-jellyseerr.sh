@@ -25,13 +25,18 @@ from pathlib import Path
 
 JELLYSEERR_URL = os.environ.get("JELLYSEERR_URL", "http://localhost:5055")
 JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "http://localhost:8096")
+JELLYFIN_INTERNAL_URL = os.environ.get("JELLYFIN_INTERNAL_URL", "http://jellyfin:8096")
 JELLYFIN_ADMIN_USER = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 JELLYFIN_ADMIN_PASSWORD = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/opt/media/config")
 SONARR_URL = os.environ.get("SONARR_URL", "http://localhost:8989")
 RADARR_URL = os.environ.get("RADARR_URL", "http://localhost:7878")
+SONARR_INTERNAL_URL = os.environ.get("SONARR_INTERNAL_URL", "http://sonarr:8989")
+RADARR_INTERNAL_URL = os.environ.get("RADARR_INTERNAL_URL", "http://radarr:7878")
 SONARR_BASE_URL = os.environ.get("SONARR_BASE_URL", "")
 RADARR_BASE_URL = os.environ.get("RADARR_BASE_URL", "")
+SONARR_EXTERNAL_URL = os.environ.get("SONARR_EXTERNAL_URL", "")
+RADARR_EXTERNAL_URL = os.environ.get("RADARR_EXTERNAL_URL", "")
 JELLYSEERR_DB = Path(CONFIG_PATH) / "jellyseerr" / "db" / "db.sqlite3"
 JELLYSEERR_SETTINGS = Path(CONFIG_PATH) / "jellyseerr" / "settings.json"
 
@@ -43,6 +48,18 @@ def normalize_base(value: str) -> str:
     if not base.startswith("/"):
         base = f"/{base}"
     return "" if base == "/" else base.rstrip("/")
+
+
+def build_external_url(explicit: str, port: int, base_path: str) -> str:
+    value = (explicit or "").strip().rstrip("/")
+    if value:
+        return value
+    parsed = urllib.parse.urlparse(JELLYFIN_URL)
+    if not parsed.hostname:
+        return ""
+    scheme = parsed.scheme or "http"
+    normalized_base = normalize_base(base_path)
+    return f"{scheme}://{parsed.hostname}:{port}{normalized_base}"
 
 
 def wait_for(url: str, timeout_seconds: int = 180):
@@ -140,11 +157,11 @@ def ensure_jellyfin_admin_login_seed():
     JELLYSEERR_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
     JELLYSEERR_SETTINGS.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
-    jellyfin = urllib.parse.urlparse(JELLYFIN_URL)
-    jellyfin_host = jellyfin.hostname or "jellyfin"
-    jellyfin_port = jellyfin.port or (443 if jellyfin.scheme == "https" else 8096)
-    jellyfin_use_ssl = jellyfin.scheme == "https"
-    jellyfin_base = normalize_base(jellyfin.path)
+    jellyfin_internal = urllib.parse.urlparse(JELLYFIN_INTERNAL_URL)
+    jellyfin_host = jellyfin_internal.hostname or "jellyfin"
+    jellyfin_port = jellyfin_internal.port or (443 if jellyfin_internal.scheme == "https" else 8096)
+    jellyfin_use_ssl = jellyfin_internal.scheme == "https"
+    jellyfin_base = normalize_base(jellyfin_internal.path)
 
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -189,13 +206,30 @@ if JELLYSEERR_SETTINGS.exists():
     settings = json.loads(JELLYSEERR_SETTINGS.read_text(encoding="utf-8"))
 settings.setdefault("main", {})
 settings.setdefault("public", {})
+settings.setdefault("jellyfin", {})
 settings.setdefault("sonarr", [])
 settings.setdefault("radarr", [])
 settings["public"]["initialized"] = True
 settings["main"]["mediaServerType"] = 2
 
-sonarr_parsed = urllib.parse.urlparse(SONARR_URL)
-radarr_parsed = urllib.parse.urlparse(RADARR_URL)
+jellyfin_internal = urllib.parse.urlparse(JELLYFIN_INTERNAL_URL)
+jellyfin_external = urllib.parse.urlparse(JELLYFIN_URL)
+jellyfin_settings = settings["jellyfin"]
+settings["jellyfin"] = {
+    "name": jellyfin_settings.get("name", "media-stack"),
+    "ip": jellyfin_internal.hostname or "jellyfin",
+    "port": jellyfin_internal.port or (443 if jellyfin_internal.scheme == "https" else 8096),
+    "useSsl": jellyfin_internal.scheme == "https",
+    "urlBase": normalize_base(jellyfin_internal.path),
+    "externalHostname": jellyfin_external.hostname or "",
+    "jellyfinForgotPasswordUrl": jellyfin_settings.get("jellyfinForgotPasswordUrl", ""),
+    "libraries": jellyfin_settings.get("libraries", []),
+    "serverId": jellyfin_settings.get("serverId", ""),
+    "apiKey": jellyfin_settings.get("apiKey", ""),
+}
+
+sonarr_parsed = urllib.parse.urlparse(SONARR_INTERNAL_URL)
+radarr_parsed = urllib.parse.urlparse(RADARR_INTERNAL_URL)
 
 settings["sonarr"] = [{
     "id": settings["sonarr"][0]["id"] if settings["sonarr"] else 0,
@@ -216,7 +250,7 @@ settings["sonarr"] = [{
     "is4k": False,
     "enableSeasonFolders": True,
     "isDefault": True,
-    "externalUrl": "",
+    "externalUrl": build_external_url(SONARR_EXTERNAL_URL, 8989, SONARR_BASE_URL),
     "syncEnabled": True,
     "preventSearch": False,
 }]
@@ -235,7 +269,7 @@ settings["radarr"] = [{
     "is4k": False,
     "minimumAvailability": "released",
     "isDefault": True,
-    "externalUrl": "",
+    "externalUrl": build_external_url(RADARR_EXTERNAL_URL, 7878, RADARR_BASE_URL),
     "syncEnabled": True,
     "preventSearch": False,
 }]

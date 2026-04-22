@@ -104,6 +104,22 @@ ensure_env_value() {
   fi
 }
 
+sync_template_env_defaults() {
+  local template_file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^# ]] && continue
+    if [[ "$line" != *=* ]]; then
+      continue
+    fi
+    local key="${line%%=*}"
+    local value="${line#*=}"
+    ensure_env_value "$STACK_DIR/.env" "$key" "$value"
+  done <"$template_file"
+}
+
+sync_template_env_defaults "$RESOURCE_DIR/media.env"
+
 ensure_env_value "$STACK_DIR/.env" "SECRET_ENCRYPTION_KEY" "$(random_hex 32)"
 ensure_env_value "$STACK_DIR/.env" "POSTGRES_USER" "jellystat"
 ensure_env_value "$STACK_DIR/.env" "POSTGRES_DB" "jellystat"
