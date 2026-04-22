@@ -41,6 +41,7 @@ bootstrap = [
   "bootstrap-media.sh",
   "bootstrap-ui-routing.sh",
   "bootstrap-jellyfin.sh",
+  "bootstrap-jellyfin-discovery.sh",
   "bootstrap-jellysearch.sh",
   "bootstrap-jellyfin-plugins.sh",
   "bootstrap-jellyseerr.sh",

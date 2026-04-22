@@ -23,9 +23,9 @@ import xml.etree.ElementTree as ET
 
 config_root = os.environ.get("CONFIG_ROOT", "/opt/media/config")
 apps = {
-    "sonarr": os.environ.get("SONARR_BASE_URL", ""),
-    "radarr": os.environ.get("RADARR_BASE_URL", ""),
-    "prowlarr": os.environ.get("PROWLARR_BASE_URL", ""),
+    "sonarr": "",
+    "radarr": "",
+    "prowlarr": "",
 }
 
 changed = []
@@ -294,14 +294,14 @@ apps = {
     "sonarr": {
         "url": os.environ.get("SONARR_URL", "http://sonarr:8989"),
         "internal_url": os.environ.get("SONARR_INTERNAL_URL", "http://sonarr:8989"),
-        "base": os.environ.get("SONARR_BASE_URL", ""),
+        "base": "",
         "root": "/media/tv",
         "category": "tv",
     },
     "radarr": {
         "url": os.environ.get("RADARR_URL", "http://radarr:7878"),
         "internal_url": os.environ.get("RADARR_INTERNAL_URL", "http://radarr:7878"),
-        "base": os.environ.get("RADARR_BASE_URL", ""),
+        "base": "",
         "root": "/media/movies",
         "category": "movies",
     },
@@ -317,7 +317,7 @@ for app, cfg in apps.items():
     resolved[app] = {"url": app_base(cfg["internal_url"], cfg["base"]), "key": key}
 
 prowlarr_url = os.environ.get("PROWLARR_URL", "http://localhost:9696")
-prowlarr_base = os.environ.get("PROWLARR_BASE_URL", "")
+prowlarr_base = ""
 prowlarr_key = read_api_key("prowlarr")
 prowlarr_root, prowlarr_discovered_base = detect_api_base("prowlarr", prowlarr_url, prowlarr_key, "/api/v1", prowlarr_base)
 prowlarr_api = f"{prowlarr_root}{prowlarr_discovered_base}"

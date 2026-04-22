@@ -5,8 +5,26 @@
     respond "ok" 200
   }
 
-  handle / {
+  handle /jellio/* {
+    reverse_proxy jellyfin:8096
+  }
+
+  handle {
     root * /srv/ui-index
     file_server
+  }
+}
+
+:5056 {
+  encode gzip
+  reverse_proxy jellyseerr:5055 {
+    header_up X-API-Key {$JELLYSEERR_API_KEY}
+  }
+}
+
+:8097 {
+  encode gzip
+  reverse_proxy jellyfin:8096 {
+    header_up X-Emby-Token {$JELLYFIN_AUTO_AUTH_TOKEN}
   }
 }

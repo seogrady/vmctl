@@ -313,12 +313,12 @@ targets = {
     "sonarr": {
         "section": "sonarr",
         "url": os.environ.get("SONARR_INTERNAL_URL", "http://sonarr:8989"),
-        "base_url": os.environ.get("SONARR_BASE_URL", "/"),
+        "base_url": "/",
     },
     "radarr": {
         "section": "radarr",
         "url": os.environ.get("RADARR_INTERNAL_URL", "http://radarr:7878"),
-        "base_url": os.environ.get("RADARR_BASE_URL", "/"),
+        "base_url": "/",
     },
 }
 
@@ -393,13 +393,19 @@ def update_yaml(path):
                 i += 1
             if section in updates:
                 present = set()
+                skip_list_continuation_for = None
                 for entry in section_lines:
                     entry_stripped = entry.strip()
+                    if skip_list_continuation_for and entry_stripped.startswith("- "):
+                        continue
+                    if entry_stripped and not entry_stripped.startswith("- "):
+                        skip_list_continuation_for = None
                     if ":" in entry_stripped and not entry_stripped.startswith("#"):
                         key = entry_stripped.split(":", 1)[0].strip()
                         if key in updates[section]:
                             out.append(f"  {key}: {yaml_value(updates[section][key])}")
                             present.add(key)
+                            skip_list_continuation_for = key
                             continue
                     out.append(entry)
                 for key, value in updates[section].items():
@@ -424,3 +430,8 @@ PY
 }
 
 configure_bazarr
+
+if service_enabled "bazarr"; then
+  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d bazarr
+  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" restart bazarr
+fi

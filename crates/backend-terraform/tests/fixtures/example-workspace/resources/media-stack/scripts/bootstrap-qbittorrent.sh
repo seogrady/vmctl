@@ -36,7 +36,7 @@ WebUI\\AuthSubnetWhitelistEnabled=true
 WebUI\\LocalHostAuth=false
 WebUI\\Username=${QBITTORRENT_USERNAME}
 WebUI\\Port=${QBITTORRENT_WEBUI_PORT:-8080}
-WebUI\\RootFolder=${QBITTORRENT_ROOT_FOLDER:-/}
+WebUI\\RootFolder=/
 EOF
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d qbittorrent-vpn
@@ -67,7 +67,7 @@ if [[ -n "$temporary_password" ]]; then
   "bypass_local_auth": true,
   "web_ui_username": "${QBITTORRENT_USERNAME}",
   "web_ui_password": "${QBITTORRENT_PASSWORD}",
-  "web_ui_root_folder": "${QBITTORRENT_ROOT_FOLDER:-/}",
+  "web_ui_root_folder": "/",
   "save_path": "${QBITTORRENT_DOWNLOADS:-/media/downloads/complete}",
   "temp_path": "${QBITTORRENT_INCOMPLETE:-/media/downloads/incomplete}",
   "temp_path_enabled": true,

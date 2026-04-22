@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "5056:5056"
+      - "8097:8097"
     volumes:
       - "${CONFIG_PATH}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
       - "${CONFIG_PATH}/caddy/ui-index:/srv/ui-index:ro"

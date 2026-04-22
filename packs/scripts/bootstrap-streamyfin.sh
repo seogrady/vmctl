@@ -94,16 +94,58 @@ if config is None:
     print("warning: streamyfin plugin configuration endpoint unavailable; skipping config patch")
     sys.exit(0)
 
-settings = config.setdefault("Config", {}).setdefault("settings", {})
-seerr = settings.setdefault("seerrServerUrl", {})
-hidden = settings.setdefault("hiddenLibraries", {})
+config_root = None
+for key in ("Config", "config"):
+    candidate = config.get(key)
+    if isinstance(candidate, dict):
+        config_root = candidate
+        break
+if config_root is None:
+    print("warning: streamyfin payload missing Config object; skipping config patch")
+    sys.exit(0)
+
+settings = None
+for key in ("settings", "Settings"):
+    candidate = config_root.get(key)
+    if isinstance(candidate, dict):
+        settings = candidate
+        break
+if settings is None:
+    print("warning: streamyfin payload missing settings object; skipping config patch")
+    sys.exit(0)
+
+def get_setting(settings_obj: dict, expected_key: str):
+    for key, value in settings_obj.items():
+        if key.lower() == expected_key.lower() and isinstance(value, dict):
+            return value
+    return None
+
 
 changed = False
-if seerr.get("value") != SEERR_URL:
-    seerr["value"] = SEERR_URL
-    changed = True
-if hidden.get("value") != []:
-    hidden["value"] = []
+
+# Streamyfin v0.66.0.0 schema is Lockable<string> for jellyseerrServerUrl.
+seerr = get_setting(settings, "jellyseerrServerUrl")
+if isinstance(seerr, dict):
+    if seerr.get("value") != SEERR_URL:
+        seerr["value"] = SEERR_URL
+        changed = True
+
+# Streamyfin v0.66.0.0 schema is Lockable<string[]> for hiddenLibraries.
+hidden = get_setting(settings, "hiddenLibraries")
+if isinstance(hidden, dict):
+    hidden_value = hidden.get("value")
+    if not isinstance(hidden_value, list):
+        hidden["value"] = []
+        changed = True
+    elif hidden_value != []:
+        hidden["value"] = []
+        changed = True
+
+# Streamyfin v0.66.0.0 schema is Lockable<Bitrate?> for defaultBitrate.
+# Some plugin responses omit `value` when null; add explicit null before POST.
+default_bitrate = get_setting(settings, "defaultBitrate")
+if isinstance(default_bitrate, dict) and "value" not in default_bitrate:
+    default_bitrate["value"] = None
     changed = True
 
 if changed:

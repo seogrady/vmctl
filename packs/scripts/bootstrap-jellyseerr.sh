@@ -33,8 +33,6 @@ SONARR_URL = os.environ.get("SONARR_URL", "http://localhost:8989")
 RADARR_URL = os.environ.get("RADARR_URL", "http://localhost:7878")
 SONARR_INTERNAL_URL = os.environ.get("SONARR_INTERNAL_URL", "http://sonarr:8989")
 RADARR_INTERNAL_URL = os.environ.get("RADARR_INTERNAL_URL", "http://radarr:7878")
-SONARR_BASE_URL = os.environ.get("SONARR_BASE_URL", "")
-RADARR_BASE_URL = os.environ.get("RADARR_BASE_URL", "")
 SONARR_EXTERNAL_URL = os.environ.get("SONARR_EXTERNAL_URL", "")
 RADARR_EXTERNAL_URL = os.environ.get("RADARR_EXTERNAL_URL", "")
 JELLYSEERR_DB = Path(CONFIG_PATH) / "jellyseerr" / "db" / "db.sqlite3"
@@ -50,7 +48,7 @@ def normalize_base(value: str) -> str:
     return "" if base == "/" else base.rstrip("/")
 
 
-def build_external_url(explicit: str, port: int, base_path: str) -> str:
+def build_external_url(explicit: str, port: int) -> str:
     value = (explicit or "").strip().rstrip("/")
     if value:
         return value
@@ -58,8 +56,7 @@ def build_external_url(explicit: str, port: int, base_path: str) -> str:
     if not parsed.hostname:
         return ""
     scheme = parsed.scheme or "http"
-    normalized_base = normalize_base(base_path)
-    return f"{scheme}://{parsed.hostname}:{port}{normalized_base}"
+    return f"{scheme}://{parsed.hostname}:{port}"
 
 
 def wait_for(url: str, timeout_seconds: int = 180):
@@ -238,7 +235,7 @@ settings["sonarr"] = [{
     "port": sonarr_parsed.port or 8989,
     "apiKey": sonarr_api_key,
     "useSsl": sonarr_parsed.scheme == "https",
-    "baseUrl": normalize_base(SONARR_BASE_URL),
+    "baseUrl": "",
     "activeProfileId": sonarr_quality.get("id", 1),
     "activeProfileName": sonarr_quality.get("name", "Any"),
     "activeDirectory": sonarr_root,
@@ -250,7 +247,7 @@ settings["sonarr"] = [{
     "is4k": False,
     "enableSeasonFolders": True,
     "isDefault": True,
-    "externalUrl": build_external_url(SONARR_EXTERNAL_URL, 8989, SONARR_BASE_URL),
+    "externalUrl": build_external_url(SONARR_EXTERNAL_URL, 8989),
     "syncEnabled": True,
     "preventSearch": False,
 }]
@@ -262,14 +259,14 @@ settings["radarr"] = [{
     "port": radarr_parsed.port or 7878,
     "apiKey": radarr_api_key,
     "useSsl": radarr_parsed.scheme == "https",
-    "baseUrl": normalize_base(RADARR_BASE_URL),
+    "baseUrl": "",
     "activeProfileId": radarr_quality.get("id", 1),
     "activeProfileName": radarr_quality.get("name", "Any"),
     "activeDirectory": radarr_root,
     "is4k": False,
     "minimumAvailability": "released",
     "isDefault": True,
-    "externalUrl": build_external_url(RADARR_EXTERNAL_URL, 7878, RADARR_BASE_URL),
+    "externalUrl": build_external_url(RADARR_EXTERNAL_URL, 7878),
     "syncEnabled": True,
     "preventSearch": False,
 }]

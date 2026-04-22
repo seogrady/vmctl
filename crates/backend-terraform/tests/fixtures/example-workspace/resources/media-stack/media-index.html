@@ -61,6 +61,14 @@
       <a id="jellio-manifest-cloudflare-link" href="#">Stremio Manifest (Cloudflare optional)</a>
       <p>Only active when Cloudflare tunnel is explicitly configured.</p>
     </li>
+    <li>
+      <a id="jellyfin-auto-link" href="#">Jellyfin (Auto Auth)</a>
+      <p>Auto-authenticated Jellyfin endpoint for LAN/Tailscale access.</p>
+    </li>
+    <li>
+      <a id="jellyseerr-auto-link" href="#">Jellyseerr (Auto Auth)</a>
+      <p>Auto-authenticated Jellyseerr endpoint for LAN/Tailscale access.</p>
+    </li>
   </ul>
   <script>
     (function () {
@@ -93,6 +101,11 @@
       wire("jellio-manifest-lan-link", "/jellio-manifest.lan.url");
       wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
+
+      var jellyfinAuto = document.getElementById("jellyfin-auto-link");
+      if (jellyfinAuto) jellyfinAuto.href = "http://" + host + ":8097";
+      var jellyseerrAuto = document.getElementById("jellyseerr-auto-link");
+      if (jellyseerrAuto) jellyseerrAuto.href = "http://" + host + ":5056";
     })();
   </script>
 </body>

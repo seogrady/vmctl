@@ -15,7 +15,6 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d caddy
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart caddy
 
 python3 <<'PY'
-import os
 import time
 import urllib.error
 import urllib.request
@@ -44,16 +43,6 @@ def wait_status(path, strict=True):
 
 wait_status("/healthz")
 wait_status("/")
-for env in [
-    "JELLYFIN_BASE_URL",
-    "SONARR_BASE_URL",
-    "RADARR_BASE_URL",
-    "PROWLARR_BASE_URL",
-    "QBITTORRENT_ROOT_FOLDER",
-]:
-    route = (os.environ.get(env) or "").strip()
-    if route and route != "/":
-        wait_status(route, strict=False)
 PY
 
 tailscale_https_enabled="${TAILSCALE_HTTPS_ENABLED:-true}"

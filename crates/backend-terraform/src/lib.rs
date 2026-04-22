@@ -1988,7 +1988,8 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/media-stack/caddyfile.media"
         );
         assert!(caddy.contains("handle_path /healthz"));
-        assert!(caddy.contains("handle / {"));
+        assert!(caddy.contains("handle {"));
+        assert!(caddy.contains("handle /jellio/*"));
         assert!(!caddy.contains("handle /sonarr*"));
         assert!(!caddy.contains("handle /radarr*"));
         assert!(!caddy.contains("handle /prowlarr*"));
