@@ -12,15 +12,17 @@ fi
 
 KODI_USER="${KODI_USER:-kodi}"
 KODI_HOME="${KODI_HOME:-/home/$KODI_USER}"
-KODI_WEB_PORT="${KODI_WEB_PORT:-80}"
+KODI_WEB_SKIN="${KODI_WEB_SKIN:-webinterface.default}"
+KODI_WEB_PORT="${KODI_WEB_PORT:-8080}"
 KODI_EVENT_SERVER_PORT="${KODI_EVENT_SERVER_PORT:-9777}"
 KODI_TAILSCALE_HTTPS_ENABLED="${KODI_TAILSCALE_HTTPS_ENABLED:-true}"
 KODI_TAILSCALE_HTTPS_TARGET="${KODI_TAILSCALE_HTTPS_TARGET:-http://127.0.0.1:${KODI_WEB_PORT}}"
+KODI_CHORUS2_REF="${KODI_CHORUS2_REF:-21.x-1.0.1}"
 
 export DEBIAN_FRONTEND=noninteractive
 packages=(
-  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11 libcap2-bin
-  pulseaudio alsa-utils avahi-daemon kodi kodi-eventclients-kodi-send cec-utils unzip
+  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11 libcap2-bin caddy
+  pulseaudio alsa-utils avahi-daemon kodi kodi-eventclients-kodi-send cec-utils
 )
 missing=()
 for package in "${packages[@]}"; do
@@ -46,6 +48,59 @@ fi
 
 install -d -o "$KODI_USER" -g "$KODI_USER" "$KODI_HOME/.kodi/userdata"
 
+install_chorus2_webinterface() {
+  local addon_dir="/usr/share/kodi/addons/${KODI_WEB_SKIN}"
+  local marker="$addon_dir/addon.xml"
+  if [[ -f "$marker" ]] && grep -q 'name="Kodi web interface - Chorus2"' "$marker"; then
+    return 0
+  fi
+
+  local tmp_dir archive_file
+  tmp_dir="$(mktemp -d)"
+  archive_file="$tmp_dir/chorus2.zip"
+  curl -fsSL -H "User-Agent: vmctl" \
+    "https://github.com/xbmc/chorus2/archive/refs/tags/${KODI_CHORUS2_REF}.zip" \
+    -o "$archive_file"
+
+  rm -rf "$addon_dir"
+  install -d "$addon_dir"
+
+  python3 - "$archive_file" "$addon_dir" <<'PY'
+from pathlib import Path
+import sys
+import zipfile
+
+archive = Path(sys.argv[1])
+addon_dir = Path(sys.argv[2])
+
+with zipfile.ZipFile(archive) as zf:
+    dist_prefix = next(
+        name[:-len("dist/addon.xml")]
+        for name in zf.namelist()
+        if name.endswith("/dist/addon.xml")
+    ) + "dist/"
+
+    for name in zf.namelist():
+        if not name.startswith(dist_prefix):
+            continue
+        relative = Path(name[len(dist_prefix):])
+        if not relative.parts:
+            continue
+        destination = addon_dir / relative
+        if name.endswith("/"):
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(zf.read(name))
+PY
+
+  chown -R root:root "$addon_dir"
+  chmod -R a+rX "$addon_dir"
+  rm -rf "$tmp_dir"
+}
+
+install_chorus2_webinterface
+
 cat > "$KODI_HOME/.kodi/userdata/advancedsettings.xml" <<EOF
 <advancedsettings>
   <services>
@@ -68,6 +123,7 @@ chown "$KODI_USER:$KODI_USER" "$KODI_HOME/.kodi/userdata/advancedsettings.xml"
 
 guisettings="$KODI_HOME/.kodi/userdata/guisettings.xml"
 python3 - "$guisettings" "$KODI_WEB_PORT" "$KODI_EVENT_SERVER_PORT" <<'PY'
+import os
 import sys
 import xml.etree.ElementTree as ET
 
@@ -88,6 +144,7 @@ settings = {
     "services.webserverauthentication": "false",
     "services.webserverusername": "",
     "services.webserverpassword": "",
+    "services.webskin": os.environ.get("KODI_WEB_SKIN", "webinterface.default"),
     "services.esenabled": "true",
     "services.esport": event_port,
     "services.esallinterfaces": "true",
@@ -109,6 +166,18 @@ tree.write(path, encoding="unicode", xml_declaration=False)
 PY
 chown "$KODI_USER:$KODI_USER" "$guisettings"
 
+install -d /etc/caddy
+cat > /etc/caddy/Caddyfile <<EOF
+:80 {
+  encode gzip
+
+  reverse_proxy 127.0.0.1:${KODI_WEB_PORT} {
+    header_up Host {host}
+    header_up X-Real-IP {remote_host}
+  }
+}
+EOF
+
 cat > /etc/avahi/services/kodi-http.service <<EOF
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
@@ -116,7 +185,7 @@ cat > /etc/avahi/services/kodi-http.service <<EOF
   <name replace-wildcards="yes">Kodi HTPC on %h</name>
   <service>
     <type>_http._tcp</type>
-    <port>${KODI_WEB_PORT}</port>
+    <port>80</port>
   </service>
 </service-group>
 EOF
@@ -133,6 +202,7 @@ cat > /etc/avahi/services/kodi-eventserver.service <<EOF
 </service-group>
 EOF
 systemctl enable --now avahi-daemon
+systemctl enable --now caddy
 
 cat > /usr/local/bin/vmctl-kodi-session <<'EOF'
 #!/usr/bin/env bash
@@ -173,6 +243,7 @@ EOF
 systemctl daemon-reload
 systemctl enable kodi-htpc.service
 systemctl restart kodi-htpc.service
+systemctl restart caddy
 
 for _ in {1..60}; do
   if curl -fsS "http://127.0.0.1:${KODI_WEB_PORT}/jsonrpc" \
@@ -182,6 +253,30 @@ for _ in {1..60}; do
   fi
   sleep 2
 done
+
+for _ in {1..60}; do
+  if curl -fsS "http://127.0.0.1/" | grep -q 'Chorus 2 - Kodi web interface'; then
+    break
+  fi
+  sleep 2
+done
+
+for _ in {1..60}; do
+  if curl -fsS "http://127.0.0.1/js/kodi-webinterface.js" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+if ! curl -fsS "http://127.0.0.1/" | grep -q 'Chorus 2 - Kodi web interface'; then
+  echo "Kodi web UI check failed: expected Chorus2 title"
+  exit 1
+fi
+
+if ! curl -fsS "http://127.0.0.1/js/kodi-webinterface.js" >/dev/null 2>&1; then
+  echo "Kodi web UI asset check failed: /js/kodi-webinterface.js"
+  exit 1
+fi
 
 if [[ "${KODI_TAILSCALE_HTTPS_ENABLED,,}" == "false" || "${KODI_TAILSCALE_HTTPS_ENABLED}" == "0" ]]; then
   if command -v tailscale >/dev/null 2>&1; then

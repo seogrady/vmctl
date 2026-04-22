@@ -15,10 +15,10 @@ server_url = "http://media-stack.home.arpa:8096"
 
 [features.remote]
 enabled = true
-web_port = 80
+web_port = 8080
 event_server_port = 9777
 tailscale_https_enabled = true
-tailscale_https_target = "http://127.0.0.1:80"
+tailscale_https_target = "http://127.0.0.1:8080"
 
 [render]
 templates = ["kodi.env.hbs", "tailscale-setup.sh.hbs"]

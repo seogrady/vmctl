@@ -1866,10 +1866,25 @@ mod tests {
     }
 
     #[test]
-    fn kodi_env_uses_port_80_for_root_access() {
+    fn kodi_env_uses_port_8080_for_kodi_upstream() {
         let env = include_str!("../tests/fixtures/example-workspace/resources/kodi-htpc/kodi.env");
-        assert!(env.contains("KODI_WEB_PORT=80"));
-        assert!(env.contains("KODI_TAILSCALE_HTTPS_TARGET=http://127.0.0.1:80"));
+        assert!(env.contains("KODI_WEB_SKIN=webinterface.default"));
+        assert!(env.contains("KODI_WEB_PORT=8080"));
+        assert!(env.contains("KODI_TAILSCALE_HTTPS_TARGET=http://127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn kodi_bootstrap_installs_chorus2_and_fronts_it_on_port_80() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-kodi.sh"
+        );
+        assert!(script.contains("KODI_WEB_PORT=\"${KODI_WEB_PORT:-8080}\""));
+        assert!(script.contains("KODI_CHORUS2_REF"));
+        assert!(script.contains("name=\"Kodi web interface - Chorus2\""));
+        assert!(script.contains("https://github.com/xbmc/chorus2/archive/refs/tags"));
+        assert!(script.contains("reverse_proxy 127.0.0.1:${KODI_WEB_PORT}"));
+        assert!(script.contains("Chorus 2 - Kodi web interface"));
+        assert!(!script.contains("repair_kodi_web_assets"));
     }
 
     #[test]
@@ -1917,7 +1932,9 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
         );
         assert!(script.contains("sync_env_from_template()"));
-        assert!(script.contains("preserve = {\"SECRET_ENCRYPTION_KEY\", \"POSTGRES_PASSWORD\", \"JWT_SECRET\"}"));
+        assert!(script.contains(
+            "preserve = {\"SECRET_ENCRYPTION_KEY\", \"POSTGRES_PASSWORD\", \"JWT_SECRET\"}"
+        ));
         assert!(script.contains("html.unescape(value)"));
         assert!(script.contains("ipv4 = [part for part in parts if \":\" not in part]"));
         assert!(script.contains("MEDIA_SERVICES_CSV="));
