@@ -135,7 +135,7 @@ tags = ["${default_tailnet_tag}"]
 [resources.features.media_services]
 enabled = true
 minimal = true
-services = ["caddy", "gluetun", "jellyfin", "sonarr", "radarr", "prowlarr", "qbittorrent-vpn", "jellyseerr", "bazarr", "homarr", "jellystat-db", "jellystat"]
+services = ["caddy", "gluetun", "jellyfin", "sonarr", "radarr", "prowlarr", "qbittorrent-vpn", "jellyseerr", "bazarr", "jellystat-db", "jellystat"]
 jellyfin_url = "http://media-stack.${domain}:8096"
 jellyfin_admin_user = "${JELLYFIN_ADMIN_USER}"
 jellyfin_admin_password = "${JELLYFIN_ADMIN_PASSWORD}"
@@ -203,10 +203,10 @@ cec = true
 
 [resources.features.remote]
 enabled = true
-web_port = 8080
+web_port = 80
 event_server_port = 9777
 tailscale_https_enabled = true
-tailscale_https_target = "http://127.0.0.1:8080"
+tailscale_https_target = "http://127.0.0.1:80"
 
 [resources.features.jellyfin]
 enabled = true

@@ -1843,6 +1843,19 @@ mod tests {
     }
 
     #[test]
+    fn media_jellyfin_bootstrap_adds_virtual_folders_via_query_params() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyfin.sh"
+        );
+        assert!(script.contains("ensure_library(name, path, collection_type, token)"));
+        assert!(script.contains("urllib.parse.urlencode"));
+        assert!(script.contains("\"name\": name"));
+        assert!(script.contains("\"collectionType\": collection_type"));
+        assert!(script.contains("\"PathInfos\": [{\"Path\": path}]"));
+        assert!(script.contains("call(\"POST\", \"/Library/Refresh\", token=token"));
+    }
+
+    #[test]
     fn media_ui_routing_bootstrap_configures_tailscale_https_serve() {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-ui-routing.sh"
@@ -1850,6 +1863,13 @@ mod tests {
         assert!(script.contains("TAILSCALE_HTTPS_ENABLED"));
         assert!(script.contains("tailscale serve --yes --bg"));
         assert!(script.contains("tailscale serve reset"));
+    }
+
+    #[test]
+    fn kodi_env_uses_port_80_for_root_access() {
+        let env = include_str!("../tests/fixtures/example-workspace/resources/kodi-htpc/kodi.env");
+        assert!(env.contains("KODI_WEB_PORT=80"));
+        assert!(env.contains("KODI_TAILSCALE_HTTPS_TARGET=http://127.0.0.1:80"));
     }
 
     #[test]
@@ -1896,8 +1916,10 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
         );
-        assert!(script.contains("if [[ ! -f \"$STACK_DIR/.env\" ]]; then"));
-        assert!(script.contains("install -m 0644 \"$RESOURCE_DIR/media.env\" \"$STACK_DIR/.env\""));
+        assert!(script.contains("sync_env_from_template()"));
+        assert!(script.contains("preserve = {\"SECRET_ENCRYPTION_KEY\", \"POSTGRES_PASSWORD\", \"JWT_SECRET\"}"));
+        assert!(script.contains("html.unescape(value)"));
+        assert!(script.contains("ipv4 = [part for part in parts if \":\" not in part]"));
         assert!(script.contains("MEDIA_SERVICES_CSV="));
         assert!(script.contains("service_enabled()"));
         assert!(script.contains("sync_template_env_defaults()"));
@@ -1906,27 +1928,11 @@ mod tests {
         assert!(script.contains("chown -R 70:70 \"$STACK_DIR/config/jellystat-db\""));
         assert!(script.contains("recover_jellystat_db()"));
         assert!(script.contains("credential drift detected; recreating database volume"));
+        assert!(script.contains("refusing to start qBittorrent without VPN"));
         assert!(script.contains("configure_bazarr()"));
         assert!(script.contains("\"enabled_integrations\": [\"sonarr\", \"radarr\"]"));
         assert!(script.contains("\"use_sonarr\": True"));
         assert!(script.contains("\"use_radarr\": True"));
-    }
-
-    #[test]
-    fn media_homarr_bootstrap_initializes_admin_credentials() {
-        let script = include_str!(
-            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-homarr.sh"
-        );
-        assert!(script.contains("homarr_db_query()"));
-        assert!(script.contains("run_homarr_cli recreate-admin --username"));
-        assert!(script.contains("run_homarr_cli users update-password"));
-        assert!(script.contains("run_homarr_cli()"));
-        assert!(script.contains("UPDATE onboarding SET previous_step = step, step = 'completed'"));
-        assert!(script.contains("seed_homarr_dashboard()"));
-        assert!(script.contains("Media Stack"));
-        assert!(script.contains("Applications"));
-        assert!(script.contains("icon_url = f\"https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{spec['icon']}.svg\""));
-        assert!(script.contains("\"appId\""));
     }
 
     #[test]
@@ -1980,6 +1986,8 @@ mod tests {
         assert!(script.contains("KODI_TAILSCALE_HTTPS_ENABLED"));
         assert!(script.contains("tailscale serve --yes --bg"));
         assert!(script.contains("tailscale serve reset"));
+        assert!(script.contains("libcap2-bin"));
+        assert!(script.contains("cap_net_bind_service=+ep"));
     }
 
     #[test]
@@ -2076,12 +2084,6 @@ mod tests {
             &root.join("generated/resources/media-stack/scripts/bootstrap-media.sh"),
             include_str!(
                 "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-homarr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-homarr.sh"
             ),
         );
         assert_file_fixture(

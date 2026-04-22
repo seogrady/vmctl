@@ -2460,7 +2460,7 @@ fn load_workspace(
     let config_path = resolve_config_path(config_path)?.path;
     let raw = std::fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
-    let process_env = std::env::vars().collect();
+    let process_env = vmctl_config::process_env_with_shell_fallback(&std::env::vars().collect())?;
     let config = Config::from_toml(&raw, &process_env)?;
     let registry = PackRegistry::load(packs_path)?;
     let desired = vmctl_planner::build_desired_state(config, &registry, target)?;

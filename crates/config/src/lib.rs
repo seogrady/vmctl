@@ -299,11 +299,19 @@ impl<'a> Interpolator<'a> {
         .ok_or_else(|| anyhow!("missing {namespace} binding `{key}`"))?;
 
         let resolved = match value {
-            Value::String(input) if namespace == "env" && input == &format!("${{{key}}}") => self
+            Value::String(input)
+                if namespace == "env" && input == &format!("${{{key}}}") =>
+            {
+                self.process_env
+                    .get(key)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("missing environment variable `{key}`"))?
+            }
+            Value::String(input) if namespace == "env" && input.trim().is_empty() => self
                 .process_env
                 .get(key)
                 .cloned()
-                .ok_or_else(|| anyhow!("missing environment variable `{key}`"))?,
+                .unwrap_or_default(),
             Value::String(input) => self.resolve_string(input, stack)?,
             scalar if is_scalar(scalar) => scalar_to_string(scalar),
             _ => bail!("{namespace}.{key} must resolve to a scalar value"),
@@ -330,6 +338,97 @@ impl<'a> Interpolator<'a> {
             _ => bail!("full-path interpolation `${{{reference}}}` must reference a scalar"),
         }
     }
+}
+
+pub fn process_env_with_shell_fallback(
+    process_env: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    process_env_with_shell_fallback_from_home(process_env, home.as_deref())
+}
+
+fn process_env_with_shell_fallback_from_home(
+    process_env: &BTreeMap<String, String>,
+    home: Option<&Path>,
+) -> Result<BTreeMap<String, String>> {
+    let mut merged = process_env.clone();
+    if let Some(home) = home {
+        for shell_file in [".bashrc", ".profile"] {
+            merge_shell_exports(home.join(shell_file).as_path(), &mut merged)?;
+        }
+    }
+    Ok(merged)
+}
+
+fn merge_shell_exports(path: &Path, env: &mut BTreeMap<String, String>) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read shell env file {}", path.display()))?;
+    for line in raw.lines() {
+        if let Some((key, value)) = parse_shell_assignment(line) {
+            env.entry(key).or_insert(value);
+        }
+    }
+    Ok(())
+}
+
+fn parse_shell_assignment(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let binding = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+    if binding.starts_with("declare -x ") {
+        return parse_shell_assignment(binding.trim_start_matches("declare -x ").trim());
+    }
+
+    let (key, value) = binding.split_once('=')?;
+    let key = key.trim();
+    if key.is_empty()
+        || !key
+            .chars()
+            .next()
+            .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        || !key.chars().all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+
+    let value = strip_inline_comment(value.trim());
+    let parsed = if let Some(stripped) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        stripped.replace("\\\"", "\"").replace("\\\\", "\\")
+    } else if let Some(stripped) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+        stripped.to_string()
+    } else {
+        value.to_string()
+    };
+    Some((key.to_string(), parsed))
+}
+
+fn strip_inline_comment(value: &str) -> &str {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut prev_escape = false;
+    for (idx, ch) in value.char_indices() {
+        if ch == '\\' && !prev_escape {
+            prev_escape = true;
+            continue;
+        }
+        if ch == '\'' && !in_double && !prev_escape {
+            in_single = !in_single;
+        } else if ch == '"' && !in_single && !prev_escape {
+            in_double = !in_double;
+        } else if ch == '#' && !in_single && !in_double && !prev_escape {
+            let trimmed = value[..idx].trim_end();
+            return trimmed;
+        }
+        prev_escape = false;
+    }
+    value
 }
 
 fn table_at(root: &Value, key: &str) -> BTreeMap<String, Value> {
@@ -415,6 +514,75 @@ mod tests {
                 .and_then(Value::as_str),
             Some("tskey-123")
         );
+    }
+
+    #[test]
+    fn falls_back_to_process_env_for_empty_env_bindings() {
+        let env = BTreeMap::from([("WIREGUARD_PRIVATE_KEY".into(), "wg-key".into())]);
+        let cfg = Config::from_toml(
+            r#"
+            [env]
+            WIREGUARD_PRIVATE_KEY = ""
+
+            [defaults.features.vpn]
+            wireguard_private_key = "${WIREGUARD_PRIVATE_KEY}"
+            "#,
+            &env,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.defaults
+                .get("features")
+                .and_then(Value::as_table)
+                .and_then(|features| features.get("vpn"))
+                .and_then(Value::as_table)
+                .and_then(|vpn| vpn.get("wireguard_private_key"))
+                .and_then(Value::as_str),
+            Some("wg-key")
+        );
+    }
+
+    #[test]
+    fn merges_shell_env_exports_from_bashrc() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".bashrc"),
+            r#"
+            export WIREGUARD_PRIVATE_KEY=wg-key
+            export WIREGUARD_ADDRESSES="10.67.87.73/32,fc00:bbbb:bbbb:bb01::4:5748/128"
+            "#,
+        )
+        .unwrap();
+
+        let merged = process_env_with_shell_fallback_from_home(&BTreeMap::new(), Some(&root)).unwrap();
+        assert_eq!(merged.get("WIREGUARD_PRIVATE_KEY").map(String::as_str), Some("wg-key"));
+        assert_eq!(
+            merged.get("WIREGUARD_ADDRESSES").map(String::as_str),
+            Some("10.67.87.73/32,fc00:bbbb:bbbb:bb01::4:5748/128")
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn strips_inline_comments_from_shell_exports() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".bashrc"),
+            "export VPN_SERVER_CITIES='Melbourne'   # or your Mullvad city label\n",
+        )
+        .unwrap();
+
+        let merged = process_env_with_shell_fallback_from_home(&BTreeMap::new(), Some(&root)).unwrap();
+        assert_eq!(
+            merged.get("VPN_SERVER_CITIES").map(String::as_str),
+            Some("Melbourne")
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

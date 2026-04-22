@@ -527,7 +527,6 @@ services = [
   "qbittorrent",
   "jellyseerr",
   "bazarr",
-  "homarr",
   "jellystat-db",
   "jellystat"
 ]
@@ -1095,7 +1094,6 @@ services = [
   "qbittorrent",
   "jellyseerr",
   "bazarr",
-  "homarr",
   "jellystat-db",
   "jellystat"
 ]
@@ -1992,7 +1990,6 @@ pub fn expand_media_stack(mut resource: ResourceConfig) -> anyhow::Result<Resour
             "qbittorrent".into(),
             "jellyseerr".into(),
             "bazarr".into(),
-            "homarr".into(),
             "jellystat-db".into(),
             "jellystat".into(),
         ],

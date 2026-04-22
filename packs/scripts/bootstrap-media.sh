@@ -67,9 +67,6 @@ if service_enabled "bazarr"; then
   install -d "$STACK_DIR/config/bazarr"
   install -d "$STACK_DIR/config/bazarr/config"
 fi
-if service_enabled "homarr"; then
-  install -d "$STACK_DIR/config/homarr"
-fi
 if service_enabled "jellystat"; then
   install -d "$STACK_DIR/config/jellystat"
 fi
@@ -77,9 +74,68 @@ if service_enabled "jellystat-db"; then
   install -d "$STACK_DIR/config/jellystat-db"
 fi
 install -m 0644 "$RESOURCE_DIR/docker-compose.media" "$STACK_DIR/docker-compose.yml"
-if [[ ! -f "$STACK_DIR/.env" ]]; then
-  install -m 0644 "$RESOURCE_DIR/media.env" "$STACK_DIR/.env"
-fi
+
+sync_env_from_template() {
+  local template_file="$1"
+  local env_file="$2"
+  python3 - "$template_file" "$env_file" <<'PY'
+from collections import OrderedDict
+import html
+from pathlib import Path
+import sys
+
+template_path = Path(sys.argv[1])
+env_path = Path(sys.argv[2])
+preserve = {"SECRET_ENCRYPTION_KEY", "POSTGRES_PASSWORD", "JWT_SECRET"}
+
+
+def parse_env(path):
+    values = OrderedDict()
+    if not path.exists():
+        return values
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        value = html.unescape(value)
+        if key == "WIREGUARD_ADDRESSES":
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+            ipv4 = [part for part in parts if ":" not in part]
+            if ipv4:
+                value = ",".join(ipv4)
+        values[key] = value
+    return values
+
+
+template = parse_env(template_path)
+current = parse_env(env_path)
+merged = OrderedDict(current)
+
+for key, value in template.items():
+    if key in preserve:
+        if not merged.get(key):
+            merged[key] = value
+    else:
+        merged[key] = value
+
+for key in preserve:
+    merged.setdefault(key, "")
+
+ordered_keys = list(template.keys()) + [key for key in current.keys() if key not in template]
+seen = set()
+lines = []
+for key in ordered_keys:
+    if key in seen or key not in merged:
+        continue
+    seen.add(key)
+    lines.append(f"{key}={merged[key]}")
+
+env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+PY
+}
+
+sync_env_from_template "$RESOURCE_DIR/media.env" "$STACK_DIR/.env"
 
 random_hex() {
   local bytes="$1"
@@ -157,7 +213,8 @@ recover_jellystat_db() {
 }
 
 if grep -q '^MEDIA_VPN_CONFIGURED=true$' "$STACK_DIR/.env" && grep -q '^MEDIA_VPN_ENABLED=false$' "$STACK_DIR/.env"; then
-  echo "media VPN is configured but incomplete; running qBittorrent without VPN until WireGuard values are set"
+  echo "media VPN is configured but incomplete; refusing to start qBittorrent without VPN"
+  exit 1
 fi
 
 if [[ -f "$RESOURCE_DIR/caddyfile.media" ]]; then
@@ -195,9 +252,6 @@ if service_enabled "jellyseerr"; then
 fi
 if service_enabled "bazarr"; then
   chown -R 1000:1000 "$STACK_DIR/config/bazarr"
-fi
-if service_enabled "homarr"; then
-  chown -R 1000:1000 "$STACK_DIR/config/homarr"
 fi
 if service_enabled "jellystat"; then
   chown -R 1000:1000 "$STACK_DIR/config/jellystat"

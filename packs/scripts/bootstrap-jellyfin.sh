@@ -91,6 +91,28 @@ def call(method, path, payload=None, token=None, allow=(200, 204)):
         raise
 
 
+def ensure_library(name, path, collection_type, token):
+    current = call("GET", "/Library/VirtualFolders", token=token, allow=(200, 204)) or []
+    if any((item.get("Name") or "").lower() == name.lower() for item in current):
+        return
+    query = urllib.parse.urlencode(
+        {
+            "name": name,
+            "collectionType": collection_type,
+            "paths": path,
+            "refreshLibrary": "true",
+        },
+        doseq=True,
+    )
+    call(
+        "POST",
+        f"/Library/VirtualFolders?{query}",
+        {"LibraryOptions": {"Enabled": True, "PathInfos": [{"Path": path}]}},
+        token=token,
+        allow=(200, 204, 400),
+    )
+
+
 def try_call(method, path, payload=None, token=None):
     try:
         return call(method, path, payload, token, allow=(200, 204))
@@ -144,10 +166,6 @@ if token:
         ("TV", "/media/tv", "tvshows"),
     ]:
         os.makedirs(path, exist_ok=True)
-        call("POST", "/Library/VirtualFolders", {
-            "Name": name,
-            "CollectionType": collection_type,
-            "Paths": [path],
-            "LibraryOptions": {},
-        }, token=token, allow=(200, 204, 400))
+        ensure_library(name, path, collection_type, token)
+    call("POST", "/Library/Refresh", token=token, allow=(200, 204, 400))
 PY

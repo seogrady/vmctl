@@ -79,15 +79,6 @@ services:
     volumes:
       - "${MEDIA_PATH}:/media"
       - "${CONFIG_PATH}/bazarr:/config"
-  homarr:
-    image: "ghcr.io/homarr-labs/homarr:latest"
-    env_file:
-      - .env
-    restart: unless-stopped
-    ports:
-      - "7575:7575"
-    volumes:
-      - "${CONFIG_PATH}/homarr:/appdata"
   jellystat-db:
     image: "postgres:15-alpine"
     env_file:

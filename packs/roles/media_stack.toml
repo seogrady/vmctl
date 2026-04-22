@@ -22,7 +22,6 @@ services = [
   "qbittorrent-vpn",
   "jellyseerr",
   "bazarr",
-  "homarr",
   "jellystat-db",
   "jellystat",
 ]
@@ -39,4 +38,4 @@ type = "wireguard"
 templates = ["docker-compose.media.hbs", "media.env.hbs", "caddyfile.media.hbs", "media-index.html.hbs", "tailscale-setup.sh.hbs"]
 
 [scripts]
-bootstrap = ["bootstrap-node.sh", "bootstrap-tailscale.sh", "bootstrap-media.sh", "bootstrap-homarr.sh", "bootstrap-jellyfin.sh", "bootstrap-jellystat.sh", "bootstrap-qbittorrent.sh", "bootstrap-arr.sh", "bootstrap-jellyseerr.sh", "bootstrap-ui-routing.sh"]
+bootstrap = ["bootstrap-node.sh", "bootstrap-tailscale.sh", "bootstrap-media.sh", "bootstrap-jellyfin.sh", "bootstrap-jellystat.sh", "bootstrap-qbittorrent.sh", "bootstrap-arr.sh", "bootstrap-jellyseerr.sh", "bootstrap-ui-routing.sh"]

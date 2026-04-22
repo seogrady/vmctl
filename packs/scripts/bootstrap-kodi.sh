@@ -12,14 +12,14 @@ fi
 
 KODI_USER="${KODI_USER:-kodi}"
 KODI_HOME="${KODI_HOME:-/home/$KODI_USER}"
-KODI_WEB_PORT="${KODI_WEB_PORT:-8080}"
+KODI_WEB_PORT="${KODI_WEB_PORT:-80}"
 KODI_EVENT_SERVER_PORT="${KODI_EVENT_SERVER_PORT:-9777}"
 KODI_TAILSCALE_HTTPS_ENABLED="${KODI_TAILSCALE_HTTPS_ENABLED:-true}"
 KODI_TAILSCALE_HTTPS_TARGET="${KODI_TAILSCALE_HTTPS_TARGET:-http://127.0.0.1:${KODI_WEB_PORT}}"
 
 export DEBIAN_FRONTEND=noninteractive
 packages=(
-  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11
+  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11 libcap2-bin
   pulseaudio alsa-utils avahi-daemon kodi kodi-eventclients-kodi-send cec-utils unzip
 )
 missing=()
@@ -35,6 +35,14 @@ if ! id "$KODI_USER" >/dev/null 2>&1; then
   useradd --create-home --home-dir "$KODI_HOME" --shell /bin/bash "$KODI_USER"
 fi
 usermod -aG audio,video,input,render,dialout "$KODI_USER"
+
+kodi_binary="$(command -v kodi.bin || true)"
+if [[ -z "$kodi_binary" ]]; then
+  kodi_binary="$(dpkg -L kodi 2>/dev/null | awk '/\/kodi\.bin$/ { print; exit }' || true)"
+fi
+if [[ -n "$kodi_binary" ]]; then
+  setcap 'cap_net_bind_service=+ep' "$kodi_binary" || true
+fi
 
 install -d -o "$KODI_USER" -g "$KODI_USER" "$KODI_HOME/.kodi/userdata"
 

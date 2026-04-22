@@ -12,7 +12,7 @@ fi
 
 KODI_USER="${KODI_USER:-kodi}"
 KODI_HOME="${KODI_HOME:-/home/$KODI_USER}"
-KODI_WEB_PORT="${KODI_WEB_PORT:-8080}"
+KODI_WEB_PORT="${KODI_WEB_PORT:-80}"
 JELLYFIN_URL="${JELLYFIN_URL:-http://media-stack.home.arpa:8096}"
 JELLYFIN_ADMIN_USER="${JELLYFIN_ADMIN_USER:-admin}"
 JELLYFIN_ADMIN_PASSWORD="${JELLYFIN_ADMIN_PASSWORD:-}"
@@ -275,7 +275,7 @@ chown -R "$KODI_USER:$KODI_USER" "$KODI_HOME/.kodi"
 systemctl restart kodi-htpc.service
 
 for _ in {1..60}; do
-  if curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-8080}/jsonrpc \
+  if curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-80}/jsonrpc \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"JSONRPC.Ping","id":1}' >/dev/null 2>&1; then
     break
@@ -283,10 +283,10 @@ for _ in {1..60}; do
   sleep 2
 done
 
-curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-8080}/jsonrpc \
+curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-80}/jsonrpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"Addons.SetAddonEnabled","params":{"addonid":"plugin.video.jellyfin","enabled":true},"id":1}' >/dev/null 2>&1 || true
 
-curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-8080}/jsonrpc \
+curl -fsS http://127.0.0.1:${KODI_WEB_PORT:-80}/jsonrpc \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"VideoLibrary.Scan","id":1}' >/dev/null 2>&1 || true
