@@ -2,7 +2,7 @@
 set -euo pipefail
 
 missing=()
-for package in ca-certificates curl python3; do
+for package in ca-certificates curl python3 nfs-kernel-server; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
 done
 if ((${#missing[@]} > 0)); then
@@ -74,6 +74,13 @@ if service_enabled "jellystat-db"; then
   install -d "$STACK_DIR/config/jellystat-db"
 fi
 install -m 0644 "$RESOURCE_DIR/docker-compose.media" "$STACK_DIR/docker-compose.yml"
+
+install -d /etc/exports.d
+cat > /etc/exports.d/vmctl-media.exports <<EOF
+$MEDIA_PATH 192.168.86.0/24(ro,sync,no_subtree_check,insecure)
+EOF
+systemctl enable --now nfs-kernel-server
+exportfs -ra
 
 sync_env_from_template() {
   local template_file="$1"

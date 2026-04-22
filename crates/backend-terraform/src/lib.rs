@@ -1879,12 +1879,25 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-kodi.sh"
         );
         assert!(script.contains("KODI_WEB_PORT=\"${KODI_WEB_PORT:-8080}\""));
+        assert!(script.contains("nfs-common"));
         assert!(script.contains("KODI_CHORUS2_REF"));
         assert!(script.contains("name=\"Kodi web interface - Chorus2\""));
         assert!(script.contains("https://github.com/xbmc/chorus2/archive/refs/tags"));
+        assert!(script.contains("media-stack.lan:/media /media nfs4"));
         assert!(script.contains("reverse_proxy 127.0.0.1:${KODI_WEB_PORT}"));
         assert!(script.contains("Chorus 2 - Kodi web interface"));
         assert!(!script.contains("repair_kodi_web_assets"));
+    }
+
+    #[test]
+    fn media_bootstrap_exports_media_for_kodi_playback() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
+        );
+        assert!(script.contains("nfs-kernel-server"));
+        assert!(script.contains("/etc/exports.d/vmctl-media.exports"));
+        assert!(script.contains("192.168.86.0/24(ro,sync,no_subtree_check,insecure)"));
+        assert!(script.contains("exportfs -ra"));
     }
 
     #[test]

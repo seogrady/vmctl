@@ -21,7 +21,7 @@ KODI_CHORUS2_REF="${KODI_CHORUS2_REF:-21.x-1.0.1}"
 
 export DEBIAN_FRONTEND=noninteractive
 packages=(
-  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11 libcap2-bin caddy
+  software-properties-common ca-certificates curl xorg xinit openbox dbus-x11 libcap2-bin caddy nfs-common
   pulseaudio alsa-utils avahi-daemon kodi kodi-eventclients-kodi-send cec-utils
 )
 missing=()
@@ -47,6 +47,25 @@ if [[ -n "$kodi_binary" ]]; then
 fi
 
 install -d -o "$KODI_USER" -g "$KODI_USER" "$KODI_HOME/.kodi/userdata"
+install -d /media
+
+if ! grep -qE '^media-stack\.lan:/media /media nfs4 ' /etc/fstab; then
+  cat >> /etc/fstab <<'EOF'
+media-stack.lan:/media /media nfs4 ro,vers=4,proto=tcp,_netdev,nofail,x-systemd.automount 0 0
+EOF
+fi
+
+for _ in {1..60}; do
+  if mountpoint -q /media || mount /media; then
+    break
+  fi
+  sleep 2
+done
+
+if ! mountpoint -q /media; then
+  echo "Kodi media mount failed: /media from media-stack.lan"
+  exit 1
+fi
 
 install_chorus2_webinterface() {
   local addon_dir="/usr/share/kodi/addons/${KODI_WEB_SKIN}"
