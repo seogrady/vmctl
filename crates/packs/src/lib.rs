@@ -84,9 +84,42 @@ pub struct PackRegistry {
 
 impl PackRegistry {
     pub fn load(root: &Path) -> Result<Self> {
-        let roles = load_named_toml_dir::<RolePack>(&root.join("roles"), |role| &role.name)?;
-        let services =
-            load_named_toml_dir::<ServicePack>(&root.join("services"), |service| &service.name)?;
+        let roles =
+            load_named_toml_dir::<RolePack>(&root.join("roles"), |role| &role.name, None, None)?;
+        let services = load_named_toml_dir::<ServicePack>(
+            &root.join("services"),
+            |service| &service.name,
+            None,
+            None,
+        )?;
+        Self::from_loaded(root, roles, services)
+    }
+
+    pub fn load_with_config(
+        root: &Path,
+        config_context: &Value,
+        process_env: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        let roles = load_named_toml_dir::<RolePack>(
+            &root.join("roles"),
+            |role| &role.name,
+            Some(config_context),
+            Some(process_env),
+        )?;
+        let services = load_named_toml_dir::<ServicePack>(
+            &root.join("services"),
+            |service| &service.name,
+            Some(config_context),
+            Some(process_env),
+        )?;
+        Self::from_loaded(root, roles, services)
+    }
+
+    fn from_loaded(
+        root: &Path,
+        roles: BTreeMap<String, RolePack>,
+        services: BTreeMap<String, ServicePack>,
+    ) -> Result<Self> {
         let templates = load_files(&root.join("templates"))?;
         let scripts = load_files(&root.join("scripts"))?;
 
@@ -212,7 +245,12 @@ impl PackRegistry {
     }
 }
 
-fn load_named_toml_dir<T>(dir: &Path, name: impl Fn(&T) -> &str) -> Result<BTreeMap<String, T>>
+fn load_named_toml_dir<T>(
+    dir: &Path,
+    name: impl Fn(&T) -> &str,
+    config_context: Option<&Value>,
+    process_env: Option<&BTreeMap<String, String>>,
+) -> Result<BTreeMap<String, T>>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -232,8 +270,23 @@ where
 
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let item: T =
-            toml::from_str(&raw).with_context(|| format!("failed to parse {}", path.display()))?;
+        let value = raw
+            .parse::<Value>()
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        let value = match (config_context, process_env) {
+            (Some(config_context), Some(process_env)) => {
+                vmctl_config::resolve_toml_value_with_context_passthrough(
+                    value,
+                    config_context,
+                    process_env,
+                )
+                .with_context(|| format!("failed to interpolate {}", path.display()))?
+            }
+            _ => value,
+        };
+        let item: T = value
+            .try_into()
+            .with_context(|| format!("failed to deserialize {}", path.display()))?;
         let item_name = name(&item).to_string();
         let expected = path
             .file_stem()
@@ -645,6 +698,83 @@ mod tests {
             .join("resources/guest/scripts/bootstrap.sh")
             .is_file());
 
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn interpolates_pack_toml_from_vmctl_config_context() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(root.join("roles")).unwrap();
+        std::fs::create_dir_all(root.join("services")).unwrap();
+        std::fs::create_dir_all(root.join("templates")).unwrap();
+
+        std::fs::write(
+            root.join("roles/example.toml"),
+            r#"
+            name = "example"
+            kind = "vm"
+
+            [features.bundle]
+            services = ["${const.service_name}"]
+
+            [render]
+            templates = ["example.env.hbs"]
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("services/demo.toml"),
+            r#"
+            name = "${const.service_name}"
+            container_type = "docker"
+
+            [ui]
+            enabled = true
+            port = 8123
+            name = "${env.DEMO_UI_NAME}"
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("templates/example.env.hbs"),
+            "{{#each ui_services}}{{name}}={{port}}{{/each}}",
+        )
+        .unwrap();
+
+        let config_context = r#"
+            [const]
+            service_name = "demo"
+
+            [env]
+            DEMO_UI_NAME = "Demo UI"
+        "#
+        .parse::<Value>()
+        .unwrap();
+        let process_env = BTreeMap::new();
+        let registry =
+            PackRegistry::load_with_config(&root, &config_context, &process_env).unwrap();
+        let resource = Resource {
+            name: "guest".to_string(),
+            kind: "vm".to_string(),
+            image: None,
+            role: Some("example".to_string()),
+            vmid: None,
+            depends_on: Vec::new(),
+            features: BTreeMap::new(),
+            settings: BTreeMap::new(),
+        };
+        let expansion = registry.expand_resource(&resource).unwrap();
+
+        assert_eq!(expansion.service_defs, vec!["demo".to_string()]);
+
+        let expansions = BTreeMap::from([("guest".to_string(), expansion)]);
+        let output = root.join("generated");
+        registry
+            .render_artifacts(&output, &[resource], &expansions)
+            .unwrap();
+
+        let rendered = std::fs::read_to_string(output.join("resources/guest/example.env")).unwrap();
+        assert_eq!(rendered, "Demo UI=8123");
         std::fs::remove_dir_all(root).unwrap();
     }
 

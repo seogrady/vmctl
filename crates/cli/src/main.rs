@@ -2461,8 +2461,12 @@ fn load_workspace(
     let raw = std::fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
     let process_env = vmctl_config::process_env_with_shell_fallback(&std::env::vars().collect())?;
-    let config = Config::from_toml(&raw, &process_env)?;
-    let registry = PackRegistry::load(packs_path)?;
+    let config_value = vmctl_config::resolve_toml_value(
+        raw.parse().context("failed to parse vmctl TOML")?,
+        &process_env,
+    )?;
+    let config = Config::from_value(config_value.clone())?;
+    let registry = PackRegistry::load_with_config(packs_path, &config_value, &process_env)?;
     let desired = vmctl_planner::build_desired_state(config, &registry, target)?;
     Ok((workspace, desired, registry))
 }

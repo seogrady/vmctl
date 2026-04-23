@@ -78,8 +78,13 @@ pub fn resolve_config_path_in(root: &Path, explicit: Option<&Path>) -> Result<Re
 impl Config {
     pub fn from_toml(raw: &str, process_env: &BTreeMap<String, String>) -> Result<Self> {
         let value = raw.parse::<Value>().context("failed to parse vmctl TOML")?;
-        let resolved = Interpolator::new(value, process_env).resolve()?;
-        let config: Config = resolved
+        let config = Self::from_value(resolve_toml_value(value, process_env)?)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn from_value(value: Value) -> Result<Self> {
+        let config: Config = value
             .try_into()
             .context("failed to deserialize resolved vmctl config")?;
         config.validate()?;
@@ -176,31 +181,78 @@ impl Config {
     }
 }
 
+pub fn resolve_toml_value(value: Value, process_env: &BTreeMap<String, String>) -> Result<Value> {
+    Interpolator::new(value, process_env).resolve()
+}
+
+pub fn resolve_toml_value_with_context(
+    value: Value,
+    context: &Value,
+    process_env: &BTreeMap<String, String>,
+) -> Result<Value> {
+    Interpolator::new_with_context(value, context.clone(), process_env).resolve()
+}
+
+pub fn resolve_toml_value_with_context_passthrough(
+    value: Value,
+    context: &Value,
+    process_env: &BTreeMap<String, String>,
+) -> Result<Value> {
+    Interpolator::new_with_context(value, context.clone(), process_env)
+        .with_unresolved_passthrough(true)
+        .with_unqualified_passthrough(true)
+        .resolve()
+}
+
 struct Interpolator<'a> {
-    root: Value,
+    value: Value,
+    context: Value,
     process_env: &'a BTreeMap<String, String>,
     consts: BTreeMap<String, Value>,
     env: BTreeMap<String, Value>,
+    unresolved_passthrough: bool,
+    unqualified_passthrough: bool,
 }
 
 impl<'a> Interpolator<'a> {
-    fn new(root: Value, process_env: &'a BTreeMap<String, String>) -> Self {
-        let consts = table_at(&root, "const");
-        let env = table_at(&root, "env");
+    fn new(value: Value, process_env: &'a BTreeMap<String, String>) -> Self {
+        Self::new_with_context(value.clone(), value, process_env)
+    }
+
+    fn new_with_context(
+        value: Value,
+        context: Value,
+        process_env: &'a BTreeMap<String, String>,
+    ) -> Self {
+        let consts = table_at(&context, "const");
+        let env = table_at(&context, "env");
         Self {
-            root,
+            value,
+            context,
             process_env,
             consts,
             env,
+            unresolved_passthrough: false,
+            unqualified_passthrough: false,
         }
+    }
+
+    fn with_unresolved_passthrough(mut self, enabled: bool) -> Self {
+        self.unresolved_passthrough = enabled;
+        self
+    }
+
+    fn with_unqualified_passthrough(mut self, enabled: bool) -> Self {
+        self.unqualified_passthrough = enabled;
+        self
     }
 
     fn resolve(mut self) -> Result<Value> {
         let mut stack = Vec::new();
-        let mut root = self.root.clone();
-        self.resolve_value(&mut root, &mut stack)?;
-        self.root = root.clone();
-        Ok(root)
+        let mut value = self.value.clone();
+        self.resolve_value(&mut value, &mut stack)?;
+        self.value = value.clone();
+        Ok(value)
     }
 
     fn resolve_value(&self, value: &mut Value, stack: &mut Vec<String>) -> Result<()> {
@@ -248,6 +300,9 @@ impl<'a> Interpolator<'a> {
         if reference.contains('.') {
             return self.resolve_full_path(reference, stack);
         }
+        if self.unqualified_passthrough {
+            return Ok(format!("${{{reference}}}"));
+        }
 
         let in_const = self.consts.contains_key(reference);
         let in_env = self.env.contains_key(reference);
@@ -257,11 +312,16 @@ impl<'a> Interpolator<'a> {
             (true, true) => {
                 bail!("ambiguous interpolation `${{{reference}}}` exists in const and env")
             }
-            (false, false) => self
-                .process_env
-                .get(reference)
-                .cloned()
-                .ok_or_else(|| anyhow!("unresolved interpolation `${{{reference}}}`")),
+            (false, false) => self.process_env.get(reference).cloned().map_or_else(
+                || {
+                    if self.unresolved_passthrough {
+                        Ok(format!("${{{reference}}}"))
+                    } else {
+                        Err(anyhow!("unresolved interpolation `${{{reference}}}`"))
+                    }
+                },
+                Ok,
+            ),
         }
     }
 
@@ -317,7 +377,7 @@ impl<'a> Interpolator<'a> {
     }
 
     fn resolve_full_path(&self, reference: &str, stack: &mut Vec<String>) -> Result<String> {
-        let mut current = &self.root;
+        let mut current = &self.context;
         for segment in reference.split('.') {
             current = current
                 .as_table()
@@ -538,6 +598,33 @@ mod tests {
                 .and_then(Value::as_str),
             Some("wg-key")
         );
+    }
+
+    #[test]
+    fn context_interpolation_can_leave_unknown_runtime_placeholders() {
+        let context = r#"
+            [const]
+            service = "demo"
+
+            [env]
+            RUNTIME_SECRET = ""
+        "#
+        .parse::<Value>()
+        .unwrap();
+        let value = r#"
+            name = "${const.service}"
+            mount = "${MEDIA_PATH}:/media"
+            secret = "${RUNTIME_SECRET}"
+        "#
+        .parse::<Value>()
+        .unwrap();
+
+        let resolved =
+            resolve_toml_value_with_context_passthrough(value, &context, &BTreeMap::new()).unwrap();
+
+        assert_eq!(resolved["name"].as_str(), Some("demo"));
+        assert_eq!(resolved["mount"].as_str(), Some("${MEDIA_PATH}:/media"));
+        assert_eq!(resolved["secret"].as_str(), Some("${RUNTIME_SECRET}"));
     }
 
     #[test]

@@ -2121,8 +2121,11 @@ mod tests {
                 "dummy-jellyfin-password".to_string(),
             ),
         ]);
-        let config = vmctl_config::Config::from_toml(raw, &env).unwrap();
-        let registry = PackRegistry::load(&workspace_root.join("packs")).unwrap();
+        let config_value = vmctl_config::resolve_toml_value(raw.parse().unwrap(), &env).unwrap();
+        let config = vmctl_config::Config::from_value(config_value.clone()).unwrap();
+        let registry =
+            PackRegistry::load_with_config(&workspace_root.join("packs"), &config_value, &env)
+                .unwrap();
         let desired = vmctl_planner::build_desired_state(config, &registry, None).unwrap();
         let root = unique_temp_dir();
         std::fs::create_dir_all(&root).unwrap();

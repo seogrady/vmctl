@@ -11,7 +11,7 @@ cec = true
 
 [features.jellyfin]
 enabled = true
-server_url = "http://media-stack.home.arpa:8096"
+server_url = "http://${const.media_stack}.${const.domain}:8096"
 
 [features.remote]
 enabled = true
