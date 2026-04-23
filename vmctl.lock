@@ -208,7 +208,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:a73fd43e48da4689f007a2ee66f7561e5f54964cd2ab39b56a5ddc8d8190376e"
+digest = "sha256:3b5b541c38646a204178069ccf7b1161d875d14fa43f2ddcfa1e2683ef95addb"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -216,7 +216,7 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:5a60b06e511b550819f185056745a0521478e977d3f8435ecc0895d8972e3d87"
+digest = "sha256:f48e6ed2fa7b1082a84bb45d17222e30fcd79c56d6115bb39cde72ecce654706"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
