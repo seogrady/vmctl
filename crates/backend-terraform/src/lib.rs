@@ -2002,7 +2002,8 @@ mod tests {
         let index = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/media-index.html"
         );
-        assert!(index.contains("data-service-port=\"8096\""));
+        assert!(index.contains("data-service-port=\"8097\""));
+        assert!(index.contains("data-service-port=\"5056\""));
         assert!(index.contains("data-service-port=\"8989\""));
         assert!(index.contains("data-service-port=\"7878\""));
         assert!(index.contains("data-service-port=\"9696\""));
@@ -2012,6 +2013,8 @@ mod tests {
         assert!(index.contains("wire(\"jellio-manifest-lan-link\", \"/jellio-manifest.lan.url\");"));
         assert!(index.contains("wire(\"jellio-manifest-tailnet-link\", \"/jellio-manifest.tailnet.url\");"));
         assert!(index.contains("wire(\"jellio-manifest-cloudflare-link\", \"/jellio-manifest.cloudflare.url\");"));
+        assert!(!index.contains("Jellyfin (Auto Auth)"));
+        assert!(!index.contains("Jellyseerr (Auto Auth)"));
     }
 
     #[test]

@@ -48,26 +48,39 @@ services:
 {{#if settings.command}}
     command: {{settings.command}}
 {{/if}}
+{{#if settings.network_mode}}
+    network_mode: "{{settings.network_mode}}"
+{{/if}}
+{{#if settings.extra_hosts}}
+    extra_hosts:
+{{#each settings.extra_hosts}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
 {{#if vpn_route_through_gluetun}}
 {{#if @root.vpn.enabled}}
     network_mode: "service:gluetun"
     depends_on:
       - gluetun
 {{else}}
+{{#unless (eq settings.network_mode "host")}}
 {{#if ports.published}}
     ports:
 {{#each ports.published}}
       - "{{this}}"
 {{/each}}
 {{/if}}
+{{/unless}}
 {{/if}}
 {{else}}
+{{#unless (eq settings.network_mode "host")}}
 {{#if ports.published}}
     ports:
 {{#each ports.published}}
       - "{{this}}"
 {{/each}}
 {{/if}}
+{{/unless}}
 {{/if}}
 {{#if volumes.mounts}}
     volumes:

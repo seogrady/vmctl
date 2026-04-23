@@ -61,10 +61,11 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
-base = os.environ.get("JELLYFIN_URL") or "http://localhost:8096"
+base = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
 user = os.environ.get("JELLYFIN_ADMIN_USER") or "admin"
 password = os.environ.get("JELLYFIN_ADMIN_PASSWORD") or ""
 base_url = ""
@@ -201,6 +202,8 @@ if not auth:
 token = auth.get("AccessToken") if auth else None
 
 if token:
+    info = try_call("GET", "/System/Info/Public", token=token) or {}
+    server_id = (info.get("Id") or "").strip()
     network = try_call("GET", "/System/Configuration/network", token=token) or {}
     if not network.get("EnablePublishedServerUriByRequest"):
         network["EnablePublishedServerUriByRequest"] = True
@@ -228,9 +231,26 @@ if token:
     call("POST", "/Library/Refresh", token=token, allow=(200, 204, 400))
     set_env_value(env_file, "JELLYFIN_AUTOLOGIN_USER", auto_login_user)
     set_env_value(env_file, "JELLYFIN_AUTO_AUTH_TOKEN", auto_token)
+    autologin_params = urllib.parse.urlencode(
+        {
+            "serverid": server_id,
+            "serverId": server_id,
+            "userid": auto_user_id,
+            "userId": auto_user_id,
+            "api_key": auto_token,
+            "accessToken": auto_token,
+        }
+    )
+    autologin_url = f"http://media-stack:8097/web/#/home.html?{autologin_params}"
+    set_env_value(env_file, "JELLYFIN_AUTOLOGIN_URL", autologin_url)
+    ui_index = Path("/opt/media/config/caddy/ui-index")
+    ui_index.mkdir(parents=True, exist_ok=True)
+    (ui_index / "jellyfin-autologin.url").write_text(autologin_url + "\n", encoding="utf-8")
 PY
 
 if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --services | grep -qx "caddy"; then
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d caddy
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart caddy
+  set -a
+  . "$ENV_FILE"
+  set +a
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate caddy
 fi

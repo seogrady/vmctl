@@ -19,7 +19,7 @@
   <ul>
     {{#each ui_services}}
     <li>
-      <a href="#" data-service-port="{{this.port}}" data-service-path="{{this.path}}">{{this.name}}</a>
+      <a href="#" data-service-name="{{this.name}}" data-service-port="{{this.port}}" data-service-path="{{this.path}}">{{this.name}}</a>
       <p>{{this.description}}</p>
     </li>
     {{/each}}
@@ -34,14 +34,6 @@
     <li>
       <a id="jellio-manifest-cloudflare-link" href="#">Stremio Manifest (Cloudflare optional)</a>
       <p>Only active when Cloudflare tunnel is explicitly configured.</p>
-    </li>
-    <li>
-      <a id="jellyfin-auto-link" href="#">Jellyfin (Auto Auth)</a>
-      <p>Auto-authenticated Jellyfin endpoint for LAN/Tailscale access.</p>
-    </li>
-    <li>
-      <a id="jellyseerr-auto-link" href="#">Jellyseerr (Auto Auth)</a>
-      <p>Auto-authenticated Jellyseerr endpoint for LAN/Tailscale access.</p>
     </li>
   </ul>
   <script>
@@ -76,10 +68,15 @@
       wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
 
-      var jellyfinAuto = document.getElementById("jellyfin-auto-link");
-      if (jellyfinAuto) jellyfinAuto.href = "http://" + host + ":8097";
-      var jellyseerrAuto = document.getElementById("jellyseerr-auto-link");
-      if (jellyseerrAuto) jellyseerrAuto.href = "http://" + host + ":5056";
+      fetch("/jellyfin-autologin.url", { cache: "no-store" })
+        .then(function (res) { return res.ok ? res.text() : ""; })
+        .then(function (text) {
+          var url = (text || "").trim();
+          if (!url) return;
+          var jellyfinLink = document.querySelector('a[data-service-name="Jellyfin"]');
+          if (jellyfinLink) jellyfinLink.href = url;
+        })
+        .catch(function () {});
     })();
   </script>
 </body>

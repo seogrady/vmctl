@@ -44,6 +44,20 @@ check_http_ok() {
   return 1
 }
 
+check_http_no_auth() {
+  local url="$1"
+  local label="$2"
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)"
+  case "$code" in
+    200|204) return 0 ;;
+    *)
+      echo "validation failed: ${label} appears to require auth (HTTP ${code}) at ${url}" >&2
+      return 1
+      ;;
+  esac
+}
+
 check_container_running() {
   local name="$1"
   if ! docker ps --format '{{.Names}}' | grep -qx "$name"; then
@@ -59,7 +73,7 @@ import subprocess
 import urllib.error
 import urllib.request
 
-JELLYFIN_BASE = "http://127.0.0.1:8096"
+JELLYFIN_BASE = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
 STREAMYFIN_ID = "1e9e5d386e6746158719e98a5c34f004"
 JELLIO_ID = "e874be83fe364568abacf5ce0574b409"
 ADMIN_USER = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
@@ -144,45 +158,64 @@ fi
 
 if service_enabled "jellyfin"; then
   check_container_running "media-jellyfin-1"
-  check_http_ok "http://127.0.0.1:8096/System/Info/Public" "jellyfin public info"
+  check_http_ok "${JELLYFIN_INTERNAL_URL:-http://127.0.0.1:8096}/System/Info/Public" "jellyfin public info"
+  if service_enabled "caddy"; then
+    check_http_no_auth "http://127.0.0.1:8097/Users/Me" "jellyfin no-login proxy"
+    autologin_url="$(curl -fsS http://127.0.0.1:80/jellyfin-autologin.url | tr -d '\n\r' || true)"
+    if [[ -z "$autologin_url" ]]; then
+      echo "validation failed: empty jellyfin autologin URL" >&2
+      exit 1
+    fi
+  fi
 fi
 
 if service_enabled "jellyseerr"; then
   check_container_running "media-jellyseerr-1"
   check_http_ok "http://127.0.0.1:5055/api/v1/status" "jellyseerr status"
   if service_enabled "caddy"; then
-    check_http_ok "http://127.0.0.1:5056/api/v1/auth/me" "jellyseerr auto-auth proxy"
+    check_http_no_auth "http://127.0.0.1:5056/api/v1/auth/me" "jellyseerr no-login proxy"
   fi
 fi
 
 if service_enabled "bazarr"; then
   check_container_running "media-bazarr-1"
   check_http_ok "http://127.0.0.1:6767" "bazarr ui"
+  check_http_no_auth "http://127.0.0.1:6767" "bazarr no-login ui"
 fi
 
 if service_enabled "jellystat"; then
   check_container_running "media-jellystat-1"
   check_http_ok "http://127.0.0.1:3000" "jellystat ui"
+  check_http_no_auth "http://127.0.0.1:3000" "jellystat no-login ui"
 fi
 
 if service_enabled "sonarr"; then
   check_container_running "media-sonarr-1"
   check_http_ok "http://127.0.0.1:8989/ping" "sonarr ping"
+  check_http_no_auth "http://127.0.0.1:8989/ping" "sonarr no-login ping"
 fi
 
 if service_enabled "radarr"; then
   check_container_running "media-radarr-1"
   check_http_ok "http://127.0.0.1:7878/ping" "radarr ping"
+  check_http_no_auth "http://127.0.0.1:7878/ping" "radarr no-login ping"
 fi
 
 if service_enabled "prowlarr"; then
   check_container_running "media-prowlarr-1"
   check_http_ok "http://127.0.0.1:9696/ping" "prowlarr ping"
+  check_http_no_auth "http://127.0.0.1:9696/ping" "prowlarr no-login ping"
 fi
 
 if service_enabled "jellysearch"; then
   check_container_running "media-jellysearch-1"
   check_http_ok "http://127.0.0.1:5000/Items?SearchTerm=test&Limit=1" "jellysearch query"
+  check_http_no_auth "http://127.0.0.1:5000/Items?SearchTerm=test&Limit=1" "jellysearch no-login query"
+fi
+
+if service_enabled "qbittorrent-vpn"; then
+  check_container_running "media-qbittorrent-vpn-1"
+  check_http_no_auth "http://127.0.0.1:${QBITTORRENT_WEBUI_PORT:-8080}/api/v2/app/version" "qbittorrent no-login api"
 fi
 
 if service_enabled "jellyfin"; then
@@ -205,7 +238,7 @@ if "127.0.0.1" in address or "[::1]" in address:
     raise SystemExit(f"validation failed: jellyfin discovery advertised loopback address: {address}")
 with urllib.request.urlopen(f"{address}/System/Info/Public", timeout=10) as response:
     if response.status != 200:
-        raise SystemExit(f"validation failed: discovery address not reachable: {address}")
+        raise SystemExit(f"validation failed: discovery address not reachable: {address} (HTTP {response.status})")
 PY
 fi
 

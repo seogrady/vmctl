@@ -13,3 +13,7 @@ mounts = [
   "${CONFIG_PATH}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro",
   "${CONFIG_PATH}/caddy/ui-index:/srv/ui-index:ro",
 ]
+
+[environment]
+JELLYFIN_AUTO_AUTH_TOKEN = "${JELLYFIN_AUTO_AUTH_TOKEN}"
+JELLYSEERR_API_KEY = "${JELLYSEERR_API_KEY}"

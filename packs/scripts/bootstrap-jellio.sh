@@ -40,8 +40,8 @@ from pathlib import Path
 PLUGIN_ID = "e874be83fe364568abacf5ce0574b409"
 env_file = Path(os.sys.argv[1])
 
-api_base_url = "http://127.0.0.1:8096"
-lan_public_base = (os.environ.get("JELLYFIN_URL") or "http://localhost:8096").rstrip("/")
+api_base_url = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
+lan_public_base = "http://media-stack"
 admin_user = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 admin_password = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 stremio_user = (os.environ.get("JELLYFIN_STREMIO_USER") or "stremio").strip()

@@ -5,15 +5,15 @@ container_type = "docker"
 name = "lscr.io/linuxserver/jellyfin"
 tag = "latest"
 
-[ports]
-published = ["8096:8096"]
+[settings]
+network_mode = "host"
 
 [volumes]
 mounts = ["${MEDIA_PATH}:/media", "${CONFIG_PATH}/jellyfin:/config"]
 
 [ui]
 enabled = true
-port = 8096
+port = 8097
 path = "/"
 name = "Jellyfin"
-description = "Media server"
+description = "Media server (no-login LAN/Tailscale endpoint)"

@@ -183,6 +183,62 @@ ensure_env_value() {
   fi
 }
 
+set_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+
+detect_primary_ipv4() {
+  ip -4 route get 1.1.1.1 2>/dev/null | awk '{
+    for (i = 1; i <= NF; i++) {
+      if ($i == "src" && (i + 1) <= NF) {
+        print $(i + 1)
+        exit
+      }
+    }
+  }'
+}
+
+ensure_hostname_aliases() {
+  local primary_ip="$1"
+  python3 - "$primary_ip" <<'PY'
+from pathlib import Path
+import sys
+
+primary_ip = sys.argv[1].strip()
+if not primary_ip:
+    raise SystemExit(0)
+
+hosts_path = Path("/etc/hosts")
+lines = hosts_path.read_text(encoding="utf-8").splitlines()
+replacement = f"{primary_ip} media-stack.home.arpa media-stack"
+updated = []
+done = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("127.0.1.1 ") and ("media-stack" in stripped or "media-stack.home.arpa" in stripped):
+        if not done:
+            updated.append(replacement)
+            done = True
+        continue
+    if stripped.startswith(primary_ip + " ") and ("media-stack" in stripped or "media-stack.home.arpa" in stripped):
+        if not done:
+            updated.append(replacement)
+            done = True
+        continue
+    updated.append(line)
+if not done:
+    updated.insert(0, replacement)
+hosts_path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
+PY
+}
+
 sync_template_env_defaults() {
   local template_file="$1"
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -198,6 +254,19 @@ sync_template_env_defaults() {
 }
 
 sync_template_env_defaults "$RESOURCE_DIR/media.env"
+
+if service_enabled "jellyfin"; then
+  current_jellyfin_internal_url="$(grep -E '^JELLYFIN_INTERNAL_URL=' "$STACK_DIR/.env" | tail -n1 | cut -d= -f2- || true)"
+  case "$current_jellyfin_internal_url" in
+    ""|http://127.0.0.1:8096|http://127.0.1.1:8096|http://localhost:8096|http://media-stack:8096|http://media-stack.home.arpa:8096)
+      primary_ip="$(detect_primary_ipv4 || true)"
+      if [[ -n "$primary_ip" ]]; then
+        set_env_value "$STACK_DIR/.env" "JELLYFIN_INTERNAL_URL" "http://${primary_ip}:8096"
+        ensure_hostname_aliases "$primary_ip"
+      fi
+      ;;
+  esac
+fi
 
 ensure_env_value "$STACK_DIR/.env" "SECRET_ENCRYPTION_KEY" "$(random_hex 32)"
 ensure_env_value "$STACK_DIR/.env" "POSTGRES_USER" "jellystat"

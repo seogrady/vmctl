@@ -184,7 +184,7 @@ def ensure_jellyfin_admin_login_seed():
 
 
 wait_for(f"{JELLYSEERR_URL}/api/v1/status")
-wait_for(f"{JELLYFIN_URL}/System/Info/Public")
+wait_for(f"{JELLYFIN_INTERNAL_URL}/System/Info/Public")
 wait_for(f"{SONARR_URL}/ping")
 wait_for(f"{RADARR_URL}/ping")
 

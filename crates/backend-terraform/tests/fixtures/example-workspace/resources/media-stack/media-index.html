@@ -18,35 +18,35 @@
   <h1>Media Stack</h1>
   <ul>
     <li>
-      <a href="#" data-service-port="8096" data-service-path="/">Jellyfin</a>
-      <p>Media server</p>
+      <a href="#" data-service-name="Jellyfin" data-service-port="8097" data-service-path="/">Jellyfin</a>
+      <p>Media server (no-login LAN/Tailscale endpoint)</p>
     </li>
     <li>
-      <a href="#" data-service-port="8989" data-service-path="/">Sonarr</a>
+      <a href="#" data-service-name="Sonarr" data-service-port="8989" data-service-path="/">Sonarr</a>
       <p>TV automation</p>
     </li>
     <li>
-      <a href="#" data-service-port="7878" data-service-path="/">Radarr</a>
+      <a href="#" data-service-name="Radarr" data-service-port="7878" data-service-path="/">Radarr</a>
       <p>Movie automation</p>
     </li>
     <li>
-      <a href="#" data-service-port="9696" data-service-path="/">Prowlarr</a>
+      <a href="#" data-service-name="Prowlarr" data-service-port="9696" data-service-path="/">Prowlarr</a>
       <p>Indexer manager</p>
     </li>
     <li>
-      <a href="#" data-service-port="8080" data-service-path="/">qBittorrent</a>
+      <a href="#" data-service-name="qBittorrent" data-service-port="8080" data-service-path="/">qBittorrent</a>
       <p>Torrent client</p>
     </li>
     <li>
-      <a href="#" data-service-port="5055" data-service-path="/">Jellyseerr</a>
-      <p>Request management</p>
+      <a href="#" data-service-name="Jellyseerr" data-service-port="5056" data-service-path="/">Jellyseerr</a>
+      <p>Request management (no-login LAN/Tailscale endpoint)</p>
     </li>
     <li>
-      <a href="#" data-service-port="6767" data-service-path="/">Bazarr</a>
+      <a href="#" data-service-name="Bazarr" data-service-port="6767" data-service-path="/">Bazarr</a>
       <p>Subtitle automation</p>
     </li>
     <li>
-      <a href="#" data-service-port="3000" data-service-path="/">Jellystat</a>
+      <a href="#" data-service-name="Jellystat" data-service-port="3000" data-service-path="/">Jellystat</a>
       <p>Usage analytics</p>
     </li>
     <li>
@@ -60,14 +60,6 @@
     <li>
       <a id="jellio-manifest-cloudflare-link" href="#">Stremio Manifest (Cloudflare optional)</a>
       <p>Only active when Cloudflare tunnel is explicitly configured.</p>
-    </li>
-    <li>
-      <a id="jellyfin-auto-link" href="#">Jellyfin (Auto Auth)</a>
-      <p>Auto-authenticated Jellyfin endpoint for LAN/Tailscale access.</p>
-    </li>
-    <li>
-      <a id="jellyseerr-auto-link" href="#">Jellyseerr (Auto Auth)</a>
-      <p>Auto-authenticated Jellyseerr endpoint for LAN/Tailscale access.</p>
     </li>
   </ul>
   <script>
@@ -102,10 +94,15 @@
       wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
 
-      var jellyfinAuto = document.getElementById("jellyfin-auto-link");
-      if (jellyfinAuto) jellyfinAuto.href = "http://" + host + ":8097";
-      var jellyseerrAuto = document.getElementById("jellyseerr-auto-link");
-      if (jellyseerrAuto) jellyseerrAuto.href = "http://" + host + ":5056";
+      fetch("/jellyfin-autologin.url", { cache: "no-store" })
+        .then(function (res) { return res.ok ? res.text() : ""; })
+        .then(function (text) {
+          var url = (text || "").trim();
+          if (!url) return;
+          var jellyfinLink = document.querySelector('a[data-service-name="Jellyfin"]');
+          if (jellyfinLink) jellyfinLink.href = url;
+        })
+        .catch(function () {});
     })();
   </script>
 </body>

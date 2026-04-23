@@ -56,7 +56,7 @@ digest = "sha256:1936aefac902f77b492259cbf9649c367de2fa7c0e743ca47614e9acbefabea
 
 [[artifacts]]
 path = "desired-state.json"
-digest = "sha256:d7c8927b2a18c5ff9d785045dee319b7a9e10eeb81aca807baadc0baa0cce85d"
+digest = "sha256:17ad8ca19d198e58a762d002080021106f92b9e04b307b9d38c6c6a0dbf6df65"
 
 [[artifacts]]
 path = "main.tf.json"
@@ -120,19 +120,19 @@ digest = "sha256:6aa802c64bd08065b05755eb40fd15993cce4a95759d27e3a64d6c909c839cb
 
 [[artifacts]]
 path = "resources/media-stack/caddyfile.media"
-digest = "sha256:c7819adee21310cfdd0cbf1fe12e44dfce72ab5a21d1705dcefb57c31482dff6"
+digest = "sha256:30e776e2bfe9146a0ae89a3037cbad4d1b1ae64982231c45104fd62a4090c345"
 
 [[artifacts]]
 path = "resources/media-stack/docker-compose.media"
-digest = "sha256:2b6a2737d5e4e9774a92beaf709334b09a5dca21bf7ec1e7328b1ef539f7235a"
+digest = "sha256:69a49bb89be3f4ba518380e598026fc91e53d69ffcc09b7dfe7194c4f800a1e5"
 
 [[artifacts]]
 path = "resources/media-stack/media-index.html"
-digest = "sha256:974facd32415050ec2ce0d3505c932bd4e945f6dbe3e44170e4f3281da028876"
+digest = "sha256:9b61ced40ad71eead71f606243142692a2bdf9bc8e01ff9f3b812a75519e4859"
 
 [[artifacts]]
 path = "resources/media-stack/media.env"
-digest = "sha256:c63f9413c66ae814a38bde06cbb2f3c102bee34146dcb41aa264149efa64ed0d"
+digest = "sha256:7ee02fdc6cd9d4fc863607a667af39bdb3302a54f26a71e4ed48c08fa9d8e590"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-arr.sh"
@@ -140,11 +140,7 @@ digest = "sha256:797c993d94d00851a7d40efb61e64a52e12e0377560eb10c4679749a40df579
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellio.sh"
-digest = "sha256:9d8a811a8cb32a7e805c7f8096b043c16ca5a35a7b4a841e6b84c987468af7e1"
-
-[[artifacts]]
-path = "resources/media-stack/scripts/bootstrap-jellyfin-discovery.sh"
-digest = "sha256:6b8a58e668971f299baba02e1e7797f773db13fd2d1dfbea257eb5a3eb28ed66"
+digest = "sha256:57c409661a946dbbd99e338c57e2923023954d2ac6337ea8a93fc208b25fff1e"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyfin-plugins.sh"
@@ -152,7 +148,7 @@ digest = "sha256:3e50cdf706d9c8e7f4dde13ee4a390acdb80c13f4f6c811fce95c91e18029b5
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyfin.sh"
-digest = "sha256:360eec91695cc96c0b30940f42d4fcbd0fd3db978b072ece5acbb636139d121f"
+digest = "sha256:5300e90f8165a137004b5e04acc9ec6236f75df2dd12652ab5328a4bb0b79940"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellysearch.sh"
@@ -160,15 +156,15 @@ digest = "sha256:a615c8a3b88155788b60a90947231387bebfce1c31a7fad4083f09e96267d86
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyseerr.sh"
-digest = "sha256:736ab81e66940ae31f302bdec712ef37f0809ba9d391aea4a6c3abee30cd391c"
+digest = "sha256:e87fe0466456cfdc5e18733da0ebe416d52f3cdbd5b2f67accd231f2ab8c6a51"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellystat.sh"
-digest = "sha256:ee5d296d9dd18b3a765c9c6d628b1953508dddb45631d05d07ea8d69a69e2ec5"
+digest = "sha256:8f133393eef13eff0d48b848c4a842f199333273d04abf33e08978b09269b595"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-media.sh"
-digest = "sha256:5b71769b1d056e616d89dfb6b55c98eea7b8cad7595e5e4b6a445edc1ba02d39"
+digest = "sha256:c708ed21808d89a9f0ef6573f03cac5b9694c29fbd9e035089aceaaca3974f8c"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-node.sh"
@@ -180,7 +176,7 @@ digest = "sha256:89cd509f001a65a7978f5915c35933b7d4240cbf5d9cd5b34ebff6c05c0609b
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-streamyfin.sh"
-digest = "sha256:2bf16507ed1e582c68038ef28890ad66097e54d5bf2366bf49a64e0524e6391b"
+digest = "sha256:1189231d3bc1a0bc42126b660900207a5ea6a8485e87e2d8514cf5bc235d2da3"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-tailscale.sh"
@@ -192,7 +188,7 @@ digest = "sha256:a2db12b046c94d11b2347e0ff4f736ee2521a984f6c154f7ef0cafacb172f43
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
-digest = "sha256:6f30e1f23738ae93e733de4993fbf106d4e6ab611d97a9e7a269e8b382235973"
+digest = "sha256:331b72cfc69f86c644c2ec8b8be336e6f8362cdfd77f9983c073ab1cf530cfd1"
 
 [[artifacts]]
 path = "resources/media-stack/tailscale-setup.sh"
@@ -212,7 +208,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:889d20935744e8b07dc2b15e428ce25a8af303fffa061a339a0491be0f302f37"
+digest = "sha256:a73fd43e48da4689f007a2ee66f7561e5f54964cd2ab39b56a5ddc8d8190376e"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -220,11 +216,11 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:892d5d25fd8effdfaa37ddba71f616fa85ce28e6e598427a16593dd90a32a39d"
+digest = "sha256:5a60b06e511b550819f185056745a0521478e977d3f8435ecc0895d8972e3d87"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
-digest = "sha256:5cc41951db1fe33256f2e556bbfcbe8a11dfba2598a6023ed377096102b9a534"
+digest = "sha256:725b2eb1f7ed1d6988cb2b3e3275f2c2ee80caa3ea66e3bc49fff5884372a388"
 
 [[artifacts]]
 path = "variables.tf.json"

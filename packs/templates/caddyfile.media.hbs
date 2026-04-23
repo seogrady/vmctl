@@ -6,7 +6,7 @@
   }
 
   handle /jellio/* {
-    reverse_proxy jellyfin:8096
+    reverse_proxy {$JELLYFIN_INTERNAL_URL}
   }
 
   handle {
@@ -24,7 +24,7 @@
 
 :8097 {
   encode gzip
-  reverse_proxy jellyfin:8096 {
-    header_up X-Emby-Token {$JELLYFIN_AUTO_AUTH_TOKEN}
+  reverse_proxy {$JELLYFIN_INTERNAL_URL} {
+    header_up X-MediaBrowser-Token {$JELLYFIN_AUTO_AUTH_TOKEN}
   }
 }

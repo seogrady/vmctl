@@ -79,7 +79,7 @@ def jellyfin_token() -> str:
     }
     auth = request_json(
         "POST",
-        f"{JF_URL}/Users/AuthenticateByName",
+        f"{JF_INTERNAL_URL}/Users/AuthenticateByName",
         {"Username": JF_USER, "Pw": JF_PASSWORD},
         headers=auth_headers,
         allow=(),
@@ -113,7 +113,7 @@ def configure_jellystat():
         )
 
 
-wait_for(f"{JF_URL}/System/Info/Public")
+wait_for(f"{JF_INTERNAL_URL}/System/Info/Public")
 wait_for(f"{JS_URL}/auth/isConfigured")
 configure_jellystat()
 PY

@@ -16,7 +16,7 @@ API_KEY = "${JELLYSEERR_API_KEY}"
 
 [ui]
 enabled = true
-port = 5055
+port = 5056
 path = "/"
 name = "Jellyseerr"
-description = "Request management"
+description = "Request management (no-login LAN/Tailscale endpoint)"
