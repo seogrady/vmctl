@@ -213,6 +213,6 @@ tailscale_https_target = "http://127.0.0.1:8080"
 
 [resources.features.jellyfin]
 enabled = true
-server_url = "http://${media_stack}.${domain}:8096"
+server_url = "http://${media_stack}/jf"
 username = "${JELLYFIN_ADMIN_USER}"
 password = "${JELLYFIN_ADMIN_PASSWORD}"

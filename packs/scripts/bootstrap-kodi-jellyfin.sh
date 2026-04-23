@@ -15,7 +15,7 @@ KODI_HOME="${KODI_HOME:-/home/$KODI_USER}"
 KODI_WEB_PORT="${KODI_WEB_PORT:-80}"
 VMCTL_HOST_SHORT="${VMCTL_HOST_SHORT:-media-stack}"
 VMCTL_HOST_FQDN="${VMCTL_HOST_FQDN:-${VMCTL_HOST_SHORT}.${VMCTL_SEARCHDOMAIN:-home.arpa}}"
-JELLYFIN_URL="${JELLYFIN_URL:-http://${VMCTL_HOST_FQDN}:8096}"
+JELLYFIN_URL="${JELLYFIN_URL:-http://${VMCTL_HOST_FQDN}/jf}"
 JELLYFIN_ADMIN_USER="${JELLYFIN_ADMIN_USER:-admin}"
 JELLYFIN_ADMIN_PASSWORD="${JELLYFIN_ADMIN_PASSWORD:-}"
 
@@ -33,13 +33,14 @@ configured = os.environ["JELLYFIN_URL"].rstrip("/")
 parsed = urllib.parse.urlparse(configured)
 scheme = parsed.scheme or "http"
 host = parsed.hostname or os.environ.get("VMCTL_HOST_SHORT") or "media-stack"
-port = parsed.port or 8096
+base_path = parsed.path.rstrip("/")
+port = parsed.port or (443 if scheme == "https" else (80 if base_path else 8096))
 short_host = host.split(".")[0]
 
 def candidate_url(candidate_host):
     if ":" in candidate_host and not candidate_host.startswith("["):
         candidate_host = f"[{candidate_host}]"
-    return f"{scheme}://{candidate_host}:{port}"
+    return f"{scheme}://{candidate_host}:{port}{base_path}"
 
 def reachable(url):
     try:
@@ -87,6 +88,17 @@ for url in candidates:
         break
 else:
     print(configured)
+PY
+)"
+
+JELLYFIN_SERVER_NAME="$(
+  JELLYFIN_URL="$JELLYFIN_URL" python3 <<'PY'
+import os
+import urllib.parse
+
+parsed = urllib.parse.urlparse(os.environ["JELLYFIN_URL"])
+host = parsed.hostname or "media-stack"
+print(host.split(".")[0])
 PY
 )"
 
@@ -180,7 +192,7 @@ EOF
 cat > "$KODI_HOME/.kodi/userdata/addon_data/plugin.video.jellyfin/settings.xml" <<EOF
 <settings version="2">
   <setting id="username">${JELLYFIN_ADMIN_USER}</setting>
-  <setting id="serverName">${VMCTL_HOST_SHORT}</setting>
+  <setting id="serverName">${JELLYFIN_SERVER_NAME}</setting>
   <setting id="server">${JELLYFIN_URL}</setting>
   <setting id="connectMsg">false</setting>
   <setting id="useDirectPaths">false</setting>
@@ -193,7 +205,7 @@ cat > "$KODI_HOME/.kodi/userdata/addon_data/service.jellyfin/settings.xml" <<EOF
   <setting id="username">${JELLYFIN_ADMIN_USER}</setting>
   <setting id="password">${JELLYFIN_ADMIN_PASSWORD}</setting>
   <setting id="server">${JELLYFIN_URL}</setting>
-  <setting id="serverName">${VMCTL_HOST_SHORT}</setting>
+  <setting id="serverName">${JELLYFIN_SERVER_NAME}</setting>
   <setting id="enableContext">true</setting>
   <setting id="remoteControl">true</setting>
 </settings>
@@ -254,7 +266,7 @@ if auth:
         "AccessToken": auth["AccessToken"],
         "DateLastAccessed": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "Id": auth.get("ServerId") or public_info["Id"],
-        "Name": public_info.get("ServerName", os.environ.get("VMCTL_HOST_SHORT", "media-stack")),
+        "Name": public_info.get("ServerName", os.environ.get("JELLYFIN_SERVER_NAME", "media-stack")),
         "UserId": auth["User"]["Id"],
         "Users": [{"Id": auth["User"]["Id"], "IsSignedInOffline": True}],
         "address": base,

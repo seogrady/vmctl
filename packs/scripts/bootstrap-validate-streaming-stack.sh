@@ -337,9 +337,10 @@ if not catalogs:
 
 base = addon_base(manifest_url)
 non_empty = []
-first_meta = None
+first_movie_meta = None
 for catalog in catalogs:
-    catalog_type = urllib.parse.quote(str(catalog.get("type") or ""), safe="")
+    raw_catalog_type = str(catalog.get("type") or "")
+    catalog_type = urllib.parse.quote(raw_catalog_type, safe="")
     catalog_id = urllib.parse.quote(str(catalog.get("id") or ""), safe="")
     if not catalog_type or not catalog_id:
         continue
@@ -348,14 +349,15 @@ for catalog in catalogs:
     metas = payload.get("metas") or []
     if metas:
         non_empty.append(url)
-        first_meta = first_meta or (catalog.get("type"), metas[0].get("id"))
+        if raw_catalog_type == "movie":
+            first_movie_meta = first_movie_meta or (raw_catalog_type, metas[0].get("id"))
 
 if not non_empty:
     raise SystemExit("validation failed: Tizen-like Jellio catalog requests returned empty metas")
 
-if first_meta and first_meta[1]:
-    stream_type = urllib.parse.quote(str(first_meta[0]), safe="")
-    stream_id = urllib.parse.quote(str(first_meta[1]), safe="")
+if first_movie_meta and first_movie_meta[1]:
+    stream_type = urllib.parse.quote(str(first_movie_meta[0]), safe="")
+    stream_id = urllib.parse.quote(str(first_movie_meta[1]), safe="")
     stream_url = f"{base}/stream/{stream_type}/{stream_id}.json"
     try:
         streams = get_json(stream_url).get("streams") or []
@@ -370,6 +372,8 @@ if first_meta and first_meta[1]:
                         raise RuntimeError(f"Tizen stream did not return HLS playlist: HTTP {response.status}, {content_type!r}")
     except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as exc:
         raise SystemExit(f"validation failed: Tizen-like stream validation failed: {exc}")
+else:
+    print("warning: Tizen-like playback validation skipped because no movie catalog item is available")
 PY
 fi
 

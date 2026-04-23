@@ -2056,6 +2056,8 @@ mod tests {
         assert!(script.contains("TIZEN_STREMIO_USER_AGENT"));
         assert!(script.contains("Accept-Encoding\": \"identity"));
         assert!(script.contains("Tizen-like Jellio catalog requests returned empty metas"));
+        assert!(script
+            .contains("playback validation skipped because no movie catalog item is available"));
         assert!(script.contains("#EXTM3U"));
     }
 

@@ -34,7 +34,7 @@
           "jellyfin": {
             "enabled": true,
             "password": "dummy-jellyfin-password",
-            "server_url": "http://media-stack.home.arpa:8096",
+            "server_url": "http://media-stack/jf",
             "username": "admin"
           },
           "remote": {
