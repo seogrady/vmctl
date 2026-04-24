@@ -2,8 +2,11 @@ name = "jellyseerr"
 container_type = "docker"
 
 [image]
-name = "fallenbagel/jellyseerr"
-tag = "latest"
+name = "ghcr.io/seerr-team/seerr"
+tag = "v3.2.0"
+
+[settings]
+init = true
 
 [ports]
 published = ["5055:5055"]

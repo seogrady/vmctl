@@ -2,7 +2,7 @@
 set -euo pipefail
 
 missing=()
-for package in ca-certificates curl python3 unzip nfs-kernel-server; do
+for package in ca-certificates curl python3 unzip nfs-kernel-server p7zip-full; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
 done
 if ((${#missing[@]} > 0)); then
@@ -105,6 +105,7 @@ preserve = {
     "JELLYFIN_STREMIO_PASSWORD",
     "JELLYFIN_STREMIO_AUTH_TOKEN",
     "JELLIO_STREMIO_MANIFEST_URL_LAN",
+    "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT",
     "JELLIO_STREMIO_MANIFEST_URL_TAILNET",
     "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE",
     "CLOUDFLARE_PUBLIC_BASE_URL",

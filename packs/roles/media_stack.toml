@@ -49,5 +49,6 @@ bootstrap = [
   "bootstrap-jellystat.sh",
   "bootstrap-qbittorrent.sh",
   "bootstrap-arr.sh",
+  "bootstrap-download-unpack.sh",
   "bootstrap-validate-streaming-stack.sh",
 ]

@@ -216,8 +216,164 @@ if service_enabled "jellyseerr"; then
   check_container_running "media-jellyseerr-1"
   check_http_ok "http://127.0.0.1:5055/api/v1/status" "jellyseerr status"
   if service_enabled "caddy"; then
-    check_http_no_auth "http://127.0.0.1:5056/api/v1/auth/me" "jellyseerr no-login proxy"
+    check_http_ok "http://127.0.0.1:5056/api/v1/settings/public" "jellyseerr proxied public settings"
   fi
+
+  python3 <<'PY'
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+config_root = Path(os.environ.get("CONFIG_PATH") or "/opt/media/config")
+settings_path = config_root / "jellyseerr" / "settings.json"
+if not settings_path.exists():
+    raise SystemExit(f"validation failed: missing Jellyseerr settings file: {settings_path}")
+
+settings = json.loads(settings_path.read_text(encoding="utf-8"))
+if not (settings.get("public") or {}).get("initialized"):
+    raise SystemExit("validation failed: Jellyseerr public settings are not initialized")
+
+jellyfin_settings = settings.get("jellyfin") or {}
+configured_jellyfin = bool((jellyfin_settings.get("ip") or "").strip())
+
+for app in ("sonarr", "radarr"):
+    config_path = config_root / app / "config.xml"
+    if not config_path.exists():
+        raise SystemExit(f"validation failed: missing {app} config at {config_path}")
+    root = ET.parse(config_path).getroot()
+    api_key = (root.findtext("ApiKey") or "").strip()
+    if not api_key:
+        raise SystemExit(f"validation failed: missing {app} API key in {config_path}")
+
+expected = {
+    "sonarr": {
+        "hostname": "sonarr",
+        "port": 8989,
+        "root": "/media/tv",
+        "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
+        "category": "tv",
+        "category_field": "tvCategory",
+    },
+    "radarr": {
+        "hostname": "radarr",
+        "port": 7878,
+        "root": "/media/movies",
+        "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
+        "category": "movies",
+        "category_field": "movieCategory",
+    },
+}
+
+for app, status_url in (
+    ("sonarr", "http://127.0.0.1:8989/api/v3/system/status"),
+    ("radarr", "http://127.0.0.1:7878/api/v3/system/status"),
+):
+    api_key = ET.parse(config_root / app / "config.xml").getroot().findtext("ApiKey") or ""
+    req = urllib.request.Request(status_url, headers={"X-Api-Key": api_key}, method="GET")
+    with urllib.request.urlopen(req, timeout=20) as response:
+        if response.status != 200:
+            raise SystemExit(f"validation failed: {app} status endpoint returned HTTP {response.status}")
+
+    root_req = urllib.request.Request(
+        status_url.replace("/system/status", "/rootfolder"),
+        headers={"X-Api-Key": api_key},
+        method="GET",
+    )
+    with urllib.request.urlopen(root_req, timeout=20) as response:
+        roots = json.loads(response.read().decode("utf-8"))
+    if expected[app]["root"] not in {item.get("path") for item in roots}:
+        raise SystemExit(f"validation failed: {app} missing expected root folder {expected[app]['root']}")
+
+    dl_req = urllib.request.Request(
+        status_url.replace("/system/status", "/downloadclient"),
+        headers={"X-Api-Key": api_key},
+        method="GET",
+    )
+    with urllib.request.urlopen(dl_req, timeout=20) as response:
+        clients = json.loads(response.read().decode("utf-8"))
+
+    target = next((item for item in clients if item.get("name") == "qBittorrent"), None)
+    if not target:
+        raise SystemExit(f"validation failed: {app} missing qBittorrent download client")
+    fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
+    if fields.get("host") != expected[app]["download_host"]:
+        raise SystemExit(
+            f"validation failed: {app} qBittorrent host mismatch: {fields.get('host')!r} != {expected[app]['download_host']!r}"
+        )
+    if str(fields.get(expected[app]["category_field"]) or "") != expected[app]["category"]:
+        raise SystemExit(
+            f"validation failed: {app} qBittorrent category mismatch: {fields.get(expected[app]['category_field'])!r} != {expected[app]['category']!r}"
+        )
+
+for key, url in (
+    ("direct", "http://127.0.0.1:5055/api/v1/settings/public"),
+    ("proxied", "http://127.0.0.1:5056/api/v1/settings/public"),
+):
+    with urllib.request.urlopen(url, timeout=20) as response:
+        if response.status != 200:
+            raise SystemExit(f"validation failed: Jellyseerr {key} settings endpoint returned HTTP {response.status}")
+        payload = json.loads(response.read().decode("utf-8"))
+    if "applicationTitle" not in payload:
+        raise SystemExit(f"validation failed: Jellyseerr {key} settings payload is missing applicationTitle")
+    if not payload.get("initialized"):
+        raise SystemExit(f"validation failed: Jellyseerr {key} settings payload is not initialized")
+    if not payload.get("mediaServerLogin"):
+        raise SystemExit(f"validation failed: Jellyseerr {key} settings payload has mediaServerLogin disabled")
+
+login_payload = {
+    "email": os.environ.get("JELLYFIN_ADMIN_USER", "admin"),
+    "username": os.environ.get("JELLYFIN_ADMIN_USER", "admin"),
+    "password": os.environ.get("JELLYFIN_ADMIN_PASSWORD", ""),
+}
+if not configured_jellyfin:
+    jellyfin_internal = urllib.parse.urlparse(os.environ.get("JELLYFIN_INTERNAL_URL", "http://jellyfin:8096"))
+    login_payload.update(
+        {
+            "hostname": jellyfin_internal.hostname or "jellyfin",
+            "port": jellyfin_internal.port or (443 if jellyfin_internal.scheme == "https" else 8096),
+            "useSsl": jellyfin_internal.scheme == "https",
+            "urlBase": jellyfin_internal.path.rstrip("/"),
+            "serverType": 2,
+        }
+    )
+login_req = urllib.request.Request(
+    "http://127.0.0.1:5055/api/v1/auth/jellyfin",
+    data=json.dumps(login_payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(login_req, timeout=20) as response:
+        if response.status not in (200, 204):
+            raise SystemExit(f"validation failed: Jellyfin login returned HTTP {response.status}")
+except urllib.error.HTTPError as err:
+    detail = err.read().decode("utf-8", errors="replace")
+    raise SystemExit(f"validation failed: Jellyfin login returned HTTP {err.code}: {detail}") from err
+
+for app in ("sonarr", "radarr"):
+    entries = settings.get(app) or []
+    if not entries:
+        raise SystemExit(f"validation failed: Jellyseerr settings missing {app} integration")
+    entry = entries[0]
+    if entry.get("hostname") != expected[app]["hostname"]:
+        raise SystemExit(
+            f"validation failed: Jellyseerr {app} hostname mismatch: {entry.get('hostname')!r} != {expected[app]['hostname']!r}"
+        )
+    if int(entry.get("port") or 0) != expected[app]["port"]:
+        raise SystemExit(
+            f"validation failed: Jellyseerr {app} port mismatch: {entry.get('port')!r} != {expected[app]['port']!r}"
+        )
+    if entry.get("activeDirectory") != expected[app]["root"]:
+        raise SystemExit(
+            f"validation failed: Jellyseerr {app} root mismatch: {entry.get('activeDirectory')!r} != {expected[app]['root']!r}"
+        )
+    if not (entry.get("apiKey") or "").strip():
+        raise SystemExit(f"validation failed: Jellyseerr {app} API key is empty")
+PY
 fi
 
 if service_enabled "bazarr"; then

@@ -42,8 +42,14 @@ env_file = Path(os.sys.argv[1])
 
 api_base_url = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
 host_server_name = (os.environ.get("VMCTL_RESOURCE_NAME") or "media-stack").strip()
-default_lan_base = os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or f"http://{host_server_name}"
-lan_public_base = (os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN") or default_lan_base).strip().rstrip("/")
+default_lan_short_base = os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or f"http://{host_server_name}"
+default_lan_fqdn_base = (
+    os.environ.get("VMCTL_HTTP_BASE_URL_FQDN")
+    or os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN")
+    or default_lan_short_base
+)
+lan_public_base = default_lan_fqdn_base.strip().rstrip("/")
+lan_short_public_base = (os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN") or default_lan_short_base).strip().rstrip("/")
 admin_user = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 admin_password = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 stremio_user = (os.environ.get("JELLYFIN_STREMIO_USER") or "stremio").strip()
@@ -259,18 +265,21 @@ def make_manifest(addon_base: str) -> str:
 
 
 lan_manifest = make_manifest(lan_base)
+lan_short_manifest = make_manifest(lan_short_public_base)
 tailnet_manifest = make_manifest(tailnet_base) if tailnet_base else ""
 cloudflare_manifest = make_manifest(cloudflare_base) if cloudflare_enabled else ""
 
 set_env_value(env_file, "JELLYFIN_STREMIO_PASSWORD", stremio_password)
 set_env_value(env_file, "JELLYFIN_STREMIO_AUTH_TOKEN", stremio_token)
 set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_LAN", lan_manifest)
+set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT", lan_short_manifest)
 set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_TAILNET", tailnet_manifest)
 set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE", cloudflare_manifest)
 
 ui_index = Path("/opt/media/config/caddy/ui-index")
 ui_index.mkdir(parents=True, exist_ok=True)
 (ui_index / "jellio-manifest.lan.url").write_text(lan_manifest + "\n", encoding="utf-8")
+(ui_index / "jellio-manifest.lan-short.url").write_text(lan_short_manifest + "\n", encoding="utf-8")
 (ui_index / "jellio-manifest.tailnet.url").write_text((tailnet_manifest or "") + "\n", encoding="utf-8")
 (ui_index / "jellio-manifest.cloudflare.url").write_text((cloudflare_manifest or "") + "\n", encoding="utf-8")
 PY

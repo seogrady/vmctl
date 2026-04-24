@@ -146,7 +146,11 @@ def ensure_jellyfin_admin_login_seed():
     settings.setdefault("main", {})
     settings.setdefault("jellyfin", {})
     settings["public"]["initialized"] = False
+    settings["public"]["mediaServerLogin"] = True
+    settings["public"]["localLogin"] = False
     settings["main"]["mediaServerType"] = 4
+    settings["main"]["mediaServerLogin"] = True
+    settings["main"]["localLogin"] = False
     # Ensure /auth/jellyfin allows host+port based setup bootstrap.
     settings["jellyfin"]["ip"] = ""
     settings["jellyfin"]["apiKey"] = ""
@@ -207,7 +211,11 @@ settings.setdefault("jellyfin", {})
 settings.setdefault("sonarr", [])
 settings.setdefault("radarr", [])
 settings["public"]["initialized"] = True
+settings["public"]["mediaServerLogin"] = True
+settings["public"]["localLogin"] = False
 settings["main"]["mediaServerType"] = 2
+settings["main"]["mediaServerLogin"] = True
+settings["main"]["localLogin"] = False
 
 jellyfin_internal = urllib.parse.urlparse(JELLYFIN_INTERNAL_URL)
 jellyfin_external = urllib.parse.urlparse(JELLYFIN_URL)

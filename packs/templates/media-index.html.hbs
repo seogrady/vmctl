@@ -25,7 +25,11 @@
     {{/each}}
     <li>
       <a id="jellio-manifest-lan-link" href="#">Stremio Manifest (LAN)</a>
-      <p>Use this on LAN devices that can install HTTP addon manifests.</p>
+      <p>Primary LAN manifest. Uses the `home.arpa` FQDN for devices that do not resolve short hostnames reliably.</p>
+    </li>
+    <li>
+      <a id="jellio-manifest-lan-short-link" href="#">Stremio Manifest (LAN Short Host)</a>
+      <p>Legacy LAN manifest using `http://media-stack`. Keep this for clients that already resolve the short host correctly.</p>
     </li>
     <li>
       <a id="jellio-manifest-tailnet-link" href="#">Stremio Manifest (Tailnet)</a>
@@ -65,6 +69,7 @@
           .catch(function () {});
       }
       wire("jellio-manifest-lan-link", "/jellio-manifest.lan.url");
+      wire("jellio-manifest-lan-short-link", "/jellio-manifest.lan-short.url");
       wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
 

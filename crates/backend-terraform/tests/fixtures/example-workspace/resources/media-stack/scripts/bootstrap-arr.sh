@@ -243,51 +243,85 @@ def ensure_root_folder(url, api_key, path):
 
 
 def ensure_qbittorrent_download_client(app, url, api_key, category):
-    existing = request("GET", f"{url}/api/v3/downloadclient", api_key) or []
-    for item in existing:
-        if item.get("name") == "qBittorrent":
+    if app == "sonarr":
+        category_field = "tvCategory"
+        recent_priority_field = "recentTvPriority"
+        older_priority_field = "olderTvPriority"
+    elif app == "radarr":
+        category_field = "movieCategory"
+        recent_priority_field = "recentMoviePriority"
+        older_priority_field = "olderMoviePriority"
+    else:
+        raise RuntimeError(f"unsupported app for qBittorrent download client: {app}")
+
+    desired = {
+        "host": QBIT_HOST,
+        "port": QBIT_PORT,
+        "urlBase": "",
+        "username": QBIT_USERNAME,
+        "password": QBIT_PASSWORD,
+        category_field: category,
+    }
+    comparable_desired = {key: value for key, value in desired.items() if key != "password"}
+
+    def current_client():
+        existing = request("GET", f"{url}/api/v3/downloadclient", api_key, allow=()) or []
+        return next((item for item in existing if item.get("name") == "qBittorrent"), None)
+
+    for _ in range(60):
+        item = current_client()
+        if item is not None:
             updated = dict(item)
             fields = updated.get("fields", [])
-            changed = False
-            desired = {
-                "host": QBIT_HOST,
-                "port": QBIT_PORT,
-                "urlBase": "",
-                "username": QBIT_USERNAME,
-                "password": QBIT_PASSWORD,
-                "category": category,
-            }
+            current = {field.get("name"): field.get("value") for field in fields}
+            if all(current.get(name) == value for name, value in comparable_desired.items()):
+                return
             for field in fields:
                 name = field.get("name")
-                if name in desired and field.get("value") != desired[name]:
+                if name in desired:
                     field["value"] = desired[name]
-                    changed = True
-            if changed:
-                request("PUT", f"{url}/api/v3/downloadclient/{item['id']}", api_key, updated)
-            return
-    fields = [
-        {"name": "host", "value": QBIT_HOST},
-        {"name": "port", "value": QBIT_PORT},
-        {"name": "urlBase", "value": ""},
-        {"name": "username", "value": QBIT_USERNAME},
-        {"name": "password", "value": QBIT_PASSWORD},
-        {"name": "category", "value": category},
-        {"name": "recentTvPriority", "value": 0},
-        {"name": "olderTvPriority", "value": 0},
-        {"name": "initialState", "value": 0},
-    ]
-    payload = {
-        "enable": True,
-        "protocol": "torrent",
-        "priority": 1,
-        "removeCompletedDownloads": True,
-        "removeFailedDownloads": True,
-        "name": "qBittorrent",
-        "implementation": "QBittorrent",
-        "configContract": "QBittorrentSettings",
-        "fields": fields,
-    }
-    request("POST", f"{url}/api/v3/downloadclient", api_key, payload)
+            try:
+                request("PUT", f"{url}/api/v3/downloadclient/{item['id']}", api_key, updated, allow=())
+            except urllib.error.HTTPError:
+                time.sleep(2)
+                continue
+        else:
+            fields = [
+                {"name": "host", "value": QBIT_HOST},
+                {"name": "port", "value": QBIT_PORT},
+                {"name": "urlBase", "value": ""},
+                {"name": "username", "value": QBIT_USERNAME},
+                {"name": "password", "value": QBIT_PASSWORD},
+                {"name": category_field, "value": category},
+                {"name": recent_priority_field, "value": 0},
+                {"name": older_priority_field, "value": 0},
+                {"name": "initialState", "value": 0},
+            ]
+            payload = {
+                "enable": True,
+                "protocol": "torrent",
+                "priority": 1,
+                "removeCompletedDownloads": True,
+                "removeFailedDownloads": True,
+                "name": "qBittorrent",
+                "implementation": "QBittorrent",
+                "configContract": "QBittorrentSettings",
+                "fields": fields,
+            }
+            try:
+                request("POST", f"{url}/api/v3/downloadclient", api_key, payload, allow=(409,))
+            except urllib.error.HTTPError:
+                time.sleep(2)
+                continue
+
+        refreshed = current_client()
+        if refreshed is not None:
+            refreshed_fields = {field.get("name"): field.get("value") for field in refreshed.get("fields") or []}
+            if all(refreshed_fields.get(name) == value for name, value in comparable_desired.items()):
+                return
+        time.sleep(2)
+
+    raise RuntimeError(f"{app} qBittorrent download client did not converge")
 
 
 apps = {

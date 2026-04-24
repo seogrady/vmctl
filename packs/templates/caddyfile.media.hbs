@@ -14,8 +14,9 @@
     format console
   }
 
-  handle /jellio/* {
-    reverse_proxy {$JELLYFIN_INTERNAL_URL}
+  @tizen_jellio {
+    header_regexp User-Agent (?i).*tizen.*
+    path /jellio/*
   }
 
   @tizen_stream {
@@ -31,6 +32,7 @@
   handle @tizen_stream {
     rewrite * /Videos/{re.tizen_stream.1}/master.m3u8
     reverse_proxy {$JELLYFIN_INTERNAL_URL} {
+      header_up Accept-Encoding identity
       header_up X-MediaBrowser-Token {$JELLYFIN_STREMIO_AUTH_TOKEN}
     }
   }
@@ -38,8 +40,19 @@
   handle @tizen_jf_stream {
     rewrite * /Videos/{re.tizen_jf_stream.1}/master.m3u8
     reverse_proxy {$JELLYFIN_INTERNAL_URL} {
+      header_up Accept-Encoding identity
       header_up X-MediaBrowser-Token {$JELLYFIN_STREMIO_AUTH_TOKEN}
     }
+  }
+
+  handle @tizen_jellio {
+    reverse_proxy {$JELLYFIN_INTERNAL_URL} {
+      header_up Accept-Encoding identity
+    }
+  }
+
+  handle /jellio/* {
+    reverse_proxy {$JELLYFIN_INTERNAL_URL}
   }
 
   handle_path /jf/* {
@@ -80,9 +93,7 @@
 
 :5056 {
   encode gzip
-  reverse_proxy jellyseerr:5055 {
-    header_up X-API-Key {$JELLYSEERR_API_KEY}
-  }
+  reverse_proxy jellyseerr:5055
 }
 
 :8097 {

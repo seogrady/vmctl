@@ -7,6 +7,9 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+{{#if settings.init}}
+    init: true
+{{/if}}
 {{#if settings.command}}
     command: {{settings.command}}
 {{/if}}
@@ -45,6 +48,9 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+{{#if settings.init}}
+    init: true
+{{/if}}
 {{#if settings.command}}
     command: {{settings.command}}
 {{/if}}

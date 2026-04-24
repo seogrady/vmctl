@@ -1906,6 +1906,8 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyseerr.sh"
         );
         assert!(script.contains("settings[\"public\"][\"initialized\"] = True"));
+        assert!(script.contains("settings[\"public\"][\"mediaServerLogin\"] = True"));
+        assert!(script.contains("settings[\"main\"][\"mediaServerLogin\"] = True"));
         assert!(script.contains("settings[\"jellyfin\"]"));
         assert!(script.contains("settings[\"sonarr\"]"));
         assert!(script.contains("settings[\"radarr\"]"));
@@ -1928,6 +1930,10 @@ mod tests {
         assert!(script.contains("QBIT_PASSWORD = os.environ.get(\"QBITTORRENT_PASSWORD\""));
         assert!(script.contains("\"AuthenticationMethod\": \"External\""));
         assert!(script.contains("\"AuthenticationRequired\": \"DisabledForLocalAddresses\""));
+        assert!(script.contains("category_field = \"tvCategory\""));
+        assert!(script.contains("category_field = \"movieCategory\""));
+        assert!(script.contains("qBittorrent download client did not converge"));
+        assert!(script.contains("request(\"GET\", f\"{url}/api/v3/downloadclient\", api_key, allow=())"));
         assert!(script.contains("request(\"PUT\", f\"{url}/api/v3/downloadclient/{item['id']}\""));
         assert!(script.contains("PROWLARR_INTERNAL_URL"));
         assert!(script.contains("ensure_default_indexers"));
@@ -1970,6 +1976,20 @@ mod tests {
         assert!(script.contains("\"enabled_integrations\": [\"sonarr\", \"radarr\"]"));
         assert!(script.contains("\"use_sonarr\": True"));
         assert!(script.contains("\"use_radarr\": True"));
+        assert!(script.contains("p7zip-full"));
+    }
+
+    #[test]
+    fn media_download_unpack_bootstrap_extracts_archives_and_triggers_arr_scans() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-download-unpack.sh"
+        );
+        assert!(script.contains("vmctl-media-unpack.service"));
+        assert!(script.contains("vmctl-media-unpack.timer"));
+        assert!(script.contains("DownloadedMoviesScan"));
+        assert!(script.contains("DownloadedEpisodesScan"));
+        assert!(script.contains("\"7z\", \"x\", \"-y\""));
+        assert!(script.contains("jellyfin_refresh"));
     }
 
     #[test]
@@ -1998,6 +2018,8 @@ mod tests {
         assert!(caddy.contains("header -Strict-Transport-Security"));
         assert!(caddy.contains("log {"));
         assert!(caddy.contains("handle {"));
+        assert!(caddy.contains("@tizen_jellio"));
+        assert!(caddy.contains("path /jellio/*"));
         assert!(caddy.contains("handle /jellio/*"));
         assert!(caddy.contains("handle_path /jf/*"));
         assert!(caddy.contains("handle /Items/*"));
@@ -2008,9 +2030,12 @@ mod tests {
         assert!(caddy.contains("path_regexp tizen_jf_stream ^/jf/[Vv]ideos/([^/]+)/stream$"));
         assert!(caddy.contains("rewrite * /Videos/{re.tizen_stream.1}/master.m3u8"));
         assert!(caddy.contains("rewrite * /Videos/{re.tizen_jf_stream.1}/master.m3u8"));
+        assert!(caddy.contains("header_up Accept-Encoding identity"));
         assert!(caddy.contains("handle /Videos/*"));
         assert!(caddy.contains("handle /videos/*"));
         assert!(caddy.contains("header_up X-MediaBrowser-Token {$JELLYFIN_STREMIO_AUTH_TOKEN}"));
+        assert!(caddy.contains("reverse_proxy jellyseerr:5055"));
+        assert!(!caddy.contains("header_up X-API-Key {$JELLYSEERR_API_KEY}"));
         assert!(!caddy.contains("handle /sonarr*"));
         assert!(!caddy.contains("handle /radarr*"));
         assert!(!caddy.contains("handle /prowlarr*"));
@@ -2025,9 +2050,12 @@ mod tests {
         );
         assert!(script.contains("MEDIA_PUBLIC_BASE_URL_LAN"));
         assert!(script.contains("VMCTL_HTTP_BASE_URL_SHORT"));
+        assert!(script.contains("VMCTL_HTTP_BASE_URL_FQDN"));
         assert!(script.contains("host_server_name = (os.environ.get(\"VMCTL_RESOURCE_NAME\")"));
         assert!(script.contains("jellyfin_public_base = f\"{addon_base.rstrip('/')}/jf\""));
         assert!(script.contains("\"PublicBaseUrl\": jellyfin_public_base"));
+        assert!(script.contains("set_env_value(env_file, \"JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT\", lan_short_manifest)"));
+        assert!(script.contains("(ui_index / \"jellio-manifest.lan-short.url\").write_text"));
         assert!(
             script.contains("return f\"{addon_base.rstrip('/')}/jellio/{encoded}/manifest.json\"")
         );
@@ -2046,6 +2074,7 @@ mod tests {
         assert!(env.contains("VMCTL_HTTP_BASE_URL_SHORT=http://media-stack"));
         assert!(env.contains("VMCTL_HTTP_BASE_URL_FQDN=http://media-stack.home.arpa"));
         assert!(env.contains("MEDIA_PUBLIC_BASE_URL_LAN=http://media-stack"));
+        assert!(env.contains("JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT="));
     }
 
     #[test]
@@ -2054,6 +2083,16 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
         );
         assert!(script.contains("TIZEN_STREMIO_USER_AGENT"));
+        assert!(script.contains("settings/public\" \"jellyseerr proxied public settings"));
+        assert!(script.contains("settings_path = config_root / \"jellyseerr\" / \"settings.json\""));
+        assert!(script.contains("settings payload is missing applicationTitle"));
+        assert!(script.contains("settings payload has mediaServerLogin disabled"));
+        assert!(script.contains("configured_jellyfin = bool"));
+        assert!(script.contains("if not configured_jellyfin:"));
+        assert!(script.contains("\"http://127.0.0.1:5055/api/v1/auth/jellyfin\""));
+        assert!(script.contains("validation failed: Jellyfin login returned HTTP"));
+        assert!(script.contains("missing qBittorrent download client"));
+        assert!(script.contains("qBittorrent category mismatch"));
         assert!(script.contains("Accept-Encoding\": \"identity"));
         assert!(script.contains("Tizen-like Jellio catalog requests returned empty metas"));
         assert!(script
@@ -2066,6 +2105,7 @@ mod tests {
         let index = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/media-index.html"
         );
+        assert!(index.contains("Stremio Manifest (LAN Short Host)"));
         assert!(index.contains("data-service-port=\"8097\""));
         assert!(index.contains("data-service-port=\"5056\""));
         assert!(index.contains("data-service-port=\"8989\""));
@@ -2075,6 +2115,7 @@ mod tests {
         assert!(index.contains("data-service-path=\"/\""));
         assert!(index.contains("link.href = \"http://\" + host + \":\" + port + path;"));
         assert!(index.contains("wire(\"jellio-manifest-lan-link\", \"/jellio-manifest.lan.url\");"));
+        assert!(index.contains("wire(\"jellio-manifest-lan-short-link\", \"/jellio-manifest.lan-short.url\");"));
         assert!(index
             .contains("wire(\"jellio-manifest-tailnet-link\", \"/jellio-manifest.tailnet.url\");"));
         assert!(index.contains(
@@ -2082,6 +2123,16 @@ mod tests {
         ));
         assert!(!index.contains("Jellyfin (Auto Auth)"));
         assert!(!index.contains("Jellyseerr (Auto Auth)"));
+    }
+
+    #[test]
+    fn media_compose_fixture_pins_seerr_and_uses_init() {
+        let compose = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/docker-compose.media"
+        );
+        assert!(compose.contains("image: \"ghcr.io/seerr-team/seerr:v3.2.0\""));
+        assert!(compose.contains("init: true"));
+        assert!(!compose.contains("fallenbagel/jellyseerr:latest"));
     }
 
     #[test]
@@ -2217,6 +2268,12 @@ mod tests {
             &root.join("generated/resources/media-stack/scripts/bootstrap-arr.sh"),
             include_str!(
                 "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-arr.sh"
+            ),
+        );
+        assert_file_fixture(
+            &root.join("generated/resources/media-stack/scripts/bootstrap-download-unpack.sh"),
+            include_str!(
+                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-download-unpack.sh"
             ),
         );
         assert_file_fixture(
