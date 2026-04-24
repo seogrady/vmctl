@@ -11,6 +11,11 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 config_dir="${CONFIG_PATH:-/opt/media/config}/qbittorrent/qBittorrent"
 install -d "$config_dir" "${QBITTORRENT_DOWNLOADS:-/media/downloads/complete}" "${QBITTORRENT_INCOMPLETE:-/media/downloads/incomplete}"
 QBITTORRENT_USERNAME="${QBITTORRENT_USERNAME:-admin}"
@@ -39,7 +44,7 @@ WebUI\\Port=${QBITTORRENT_WEBUI_PORT:-8080}
 WebUI\\RootFolder=/
 EOF
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d qbittorrent-vpn
+docker_compose up -d qbittorrent-vpn
 
 for _ in $(seq 1 60); do
   if curl -sS "http://localhost:${QBITTORRENT_WEBUI_PORT:-8080}/api/v2/app/version" >/dev/null 2>&1; then
@@ -48,7 +53,7 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
-temporary_password="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs qbittorrent-vpn 2>&1 \
+temporary_password="$(docker_compose logs qbittorrent-vpn 2>&1 \
   | sed -n 's/.*temporary password is provided for this session: //p' \
   | tail -1)"
 

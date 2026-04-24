@@ -459,20 +459,6 @@ fn tailscale_auth_key(resource: &Resource) -> Option<String> {
 
 fn tailscale_context(resource: &Resource) -> serde_json::Value {
     let tailscale = resource.features.get("tailscale").and_then(Value::as_table);
-    let hostname = match resource.settings.get("hostname") {
-        Some(Value::String(hostname)) => Some(hostname.clone()),
-        Some(Value::Boolean(true)) => Some(resource.name.clone()),
-        Some(Value::Boolean(false)) => None,
-        _ if resource
-            .settings
-            .get("hostnames")
-            .and_then(Value::as_bool)
-            .unwrap_or(false) =>
-        {
-            Some(resource.name.clone())
-        }
-        _ => Some(resource.name.clone()),
-    };
 
     serde_json::json!({
         "auth_key": tailscale_auth_key(resource),
@@ -480,7 +466,7 @@ fn tailscale_context(resource: &Resource) -> serde_json::Value {
             .and_then(|tailscale| tailscale.get("enabled"))
             .and_then(Value::as_bool)
             .unwrap_or(false),
-        "hostname": hostname,
+        "hostname": resource.name.clone(),
         "advertise_routes": tailscale
             .and_then(|tailscale| tailscale.get("advertise_routes"))
             .and_then(Value::as_array)
@@ -600,7 +586,7 @@ mod tests {
 
     #[test]
     fn tailscale_hostname_defaults_to_resource_name() {
-        let mut resource = Resource {
+        let resource = Resource {
             name: "tailscale-gateway".to_string(),
             kind: "lxc".to_string(),
             image: None,
@@ -621,14 +607,33 @@ mod tests {
             tailscale_context(&resource).get("hostname").unwrap(),
             "tailscale-gateway"
         );
+    }
 
+    #[test]
+    fn tailscale_hostname_ignores_legacy_override_setting() {
+        let mut resource = Resource {
+            name: "tailscale-gateway".to_string(),
+            kind: "lxc".to_string(),
+            image: None,
+            role: Some("tailscale_gateway".to_string()),
+            vmid: None,
+            depends_on: Vec::new(),
+            features: BTreeMap::from([(
+                "tailscale".to_string(),
+                toml::Value::Table(toml::map::Map::from_iter([(
+                    "enabled".to_string(),
+                    toml::Value::Boolean(true),
+                )])),
+            )]),
+            settings: BTreeMap::new(),
+        };
         resource
             .settings
-            .insert("hostname".to_string(), toml::Value::Boolean(false));
-        assert!(tailscale_context(&resource)
-            .get("hostname")
-            .unwrap()
-            .is_null());
+            .insert("hostname".to_string(), toml::Value::String("gateway".to_string()));
+        assert_eq!(
+            tailscale_context(&resource).get("hostname").unwrap(),
+            "tailscale-gateway"
+        );
     }
 
     #[test]

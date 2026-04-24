@@ -330,22 +330,10 @@ Docker service images are separate from Proxmox base images. Entries in
 artifacts to the guest, copies them to `/opt/media`, runs
 `docker compose pull`, and starts the stack with `docker compose up -d`.
 
-Hostnames are config driven. Set `defaults.hostnames = true` to assign each
-resource a local hostname using its resource name. A resource can override that
-with `hostname = "my-host"`, force the default with `hostname = true`, or opt
-out with `hostname = false`. When a resource has a hostname and a
-`searchdomain`, vmctl derives a default provisioning host such as
-`media.home.arpa` unless `[resources.provision].host` is set explicitly:
-
-```toml
-[defaults]
-searchdomain = "home.arpa"
-hostnames = true
-
-[[resources]]
-name = "media-stack"
-hostname = "media"
-```
+Hostnames are config driven from resource names. vmctl uses each resource
+`name` as its hostname. For the media stack, prefer Tailscale MagicDNS
+hostnames (for example `media-stack` and `media-stack.<tailnet>.ts.net`) rather
+than custom LAN domains.
 
 Tailscale does not automatically create public internet URLs for every
 resource. There are three separate access modes:
@@ -354,8 +342,8 @@ resource. There are three separate access modes:
   `192.168.86.0/24`. Tailnet clients can reach private LAN addresses after the
   route is approved in Tailscale. This is the default gateway model.
 - Per-resource client: a resource with `features.tailscale.enabled = true`
-  joins the tailnet and gets a Tailscale/MagicDNS name based on its configured
-  hostname. The media role runs this setup when enabled.
+  joins the tailnet and gets a Tailscale/MagicDNS name based on its resource
+  name. The media role runs this setup when enabled.
 - Public internet access: expose only selected services through a deliberate
   public ingress, such as Tailscale Funnel or a reverse proxy. vmctl should not
   publish every resource by default.

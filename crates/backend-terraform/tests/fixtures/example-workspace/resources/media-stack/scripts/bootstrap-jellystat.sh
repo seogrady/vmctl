@@ -15,6 +15,11 @@ set +a
 
 MEDIA_SERVICES_CSV="${MEDIA_SERVICES:-}"
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 service_enabled() {
   local name="$1"
   case ",${MEDIA_SERVICES_CSV}," in
@@ -119,7 +124,7 @@ configure_jellystat()
 PY
 
 # Disable web login requirement so UI opens directly without manual credentials.
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T jellystat-db \
+docker_compose exec -T jellystat-db \
   psql -U "${POSTGRES_USER:-jellystat}" -d "${POSTGRES_DB:-jellystat}" \
   -c 'UPDATE app_config SET "REQUIRE_LOGIN" = false WHERE "ID" = 1;'
 

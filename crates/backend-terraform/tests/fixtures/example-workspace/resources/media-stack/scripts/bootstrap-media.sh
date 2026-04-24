@@ -30,6 +30,7 @@ STACK_DIR="/opt/media"
 . "$RESOURCE_DIR/media.env"
 MEDIA_PATH="${MEDIA_PATH:-/media}"
 MEDIA_SERVICES_CSV="${MEDIA_SERVICES:-}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
 
 service_enabled() {
   local name="$1"
@@ -37,6 +38,10 @@ service_enabled() {
     *,"$name",*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" "$@"
 }
 
 install -d "$STACK_DIR" "$STACK_DIR/config" \
@@ -76,6 +81,9 @@ fi
 if service_enabled "jellystat-db"; then
   install -d "$STACK_DIR/config/jellystat-db"
 fi
+if service_enabled "jellio-shim"; then
+  install -d "$STACK_DIR/config/jellio-shim"
+fi
 install -m 0644 "$RESOURCE_DIR/docker-compose.media" "$STACK_DIR/docker-compose.yml"
 
 install -d /etc/exports.d
@@ -101,13 +109,9 @@ preserve = {
     "POSTGRES_PASSWORD",
     "JWT_SECRET",
     "MEILI_MASTER_KEY",
-    "MEDIA_PUBLIC_BASE_URL_LAN",
     "JELLYFIN_STREMIO_PASSWORD",
     "JELLYFIN_STREMIO_AUTH_TOKEN",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN_IP",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT",
-    "JELLIO_STREMIO_MANIFEST_URL_TAILNET",
+    "JELLIO_STREMIO_MANIFEST_URL_TAILSCALE",
     "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE",
     "CLOUDFLARE_PUBLIC_BASE_URL",
     "CLOUDFLARED_TOKEN",
@@ -210,47 +214,6 @@ detect_primary_ipv4() {
   }'
 }
 
-ensure_hostname_aliases() {
-  local primary_ip="$1"
-  VMCTL_HOST_SHORT="${VMCTL_HOST_SHORT:-${VMCTL_RESOURCE_NAME:-media-stack}}" \
-  VMCTL_HOST_FQDN="${VMCTL_HOST_FQDN:-${VMCTL_HOST_SHORT}.${VMCTL_SEARCHDOMAIN:-home.arpa}}" \
-  python3 - "$primary_ip" <<'PY'
-from pathlib import Path
-import os
-import sys
-
-primary_ip = sys.argv[1].strip()
-if not primary_ip:
-    raise SystemExit(0)
-
-host_short = (os.environ.get("VMCTL_HOST_SHORT") or "media-stack").strip()
-host_fqdn = (os.environ.get("VMCTL_HOST_FQDN") or host_short).strip()
-host_aliases = [value for value in [host_fqdn, host_short] if value]
-
-hosts_path = Path("/etc/hosts")
-lines = hosts_path.read_text(encoding="utf-8").splitlines()
-replacement = f"{primary_ip} {' '.join(host_aliases)}"
-updated = []
-done = False
-for line in lines:
-    stripped = line.strip()
-    if stripped.startswith("127.0.1.1 ") and any(alias in stripped for alias in host_aliases):
-        if not done:
-            updated.append(replacement)
-            done = True
-        continue
-    if stripped.startswith(primary_ip + " ") and any(alias in stripped for alias in host_aliases):
-        if not done:
-            updated.append(replacement)
-            done = True
-        continue
-    updated.append(line)
-if not done:
-    updated.insert(0, replacement)
-hosts_path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
-PY
-}
-
 sync_template_env_defaults() {
   local template_file="$1"
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -275,14 +238,11 @@ fi
 
 if service_enabled "jellyfin"; then
   current_jellyfin_internal_url="$(grep -E '^JELLYFIN_INTERNAL_URL=' "$STACK_DIR/.env" | tail -n1 | cut -d= -f2- || true)"
-  vmctl_host_short="${VMCTL_HOST_SHORT:-${VMCTL_RESOURCE_NAME:-media-stack}}"
-  vmctl_host_fqdn="${VMCTL_HOST_FQDN:-${vmctl_host_short}.${VMCTL_SEARCHDOMAIN:-home.arpa}}"
   case "$current_jellyfin_internal_url" in
-    ""|http://127.0.0.1:8096|http://127.0.1.1:8096|http://localhost:8096|"http://${vmctl_host_short}:8096"|"http://${vmctl_host_fqdn}:8096")
+    ""|http://127.0.0.1:8096|http://127.0.1.1:8096|http://localhost:8096|http://media-stack:8096)
       primary_ip="$(detect_primary_ipv4 || true)"
       if [[ -n "$primary_ip" ]]; then
         set_env_value "$STACK_DIR/.env" "JELLYFIN_INTERNAL_URL" "http://${primary_ip}:8096"
-        ensure_hostname_aliases "$primary_ip"
       fi
       ;;
   esac
@@ -310,19 +270,19 @@ recover_jellystat_db() {
     return 0
   fi
 
-  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d jellystat-db
-  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" exec -T -u root jellystat-db \
+  docker_compose up -d jellystat-db
+  docker_compose exec -T -u root jellystat-db \
     sh -lc 'chown -R postgres:postgres /var/lib/postgresql/data'
-  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" restart jellystat-db
+  docker_compose restart jellystat-db
   sleep 3
 
-  if docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" logs --tail=120 jellystat-db \
+  if docker_compose logs --tail=120 jellystat-db \
     | grep -q "password authentication failed for user"; then
     echo "jellystat-db credential drift detected; recreating database volume"
-    docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" stop jellystat jellystat-db || true
+    docker_compose stop jellystat jellystat-db || true
     rm -rf "$STACK_DIR/config/jellystat-db"/*
     chown -R 70:70 "$STACK_DIR/config/jellystat-db"
-    docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d jellystat-db
+    docker_compose up -d jellystat-db
   fi
 }
 
@@ -343,8 +303,17 @@ if [[ -f "$RESOURCE_DIR/media-index.html" ]]; then
     install -m 0644 "$RESOURCE_DIR/media-index.html" "$STACK_DIR/config/caddy/ui-index/index.html"
   fi
 fi
+if [[ -f "$RESOURCE_DIR/jellio-shim.py" ]]; then
+  if service_enabled "jellio-shim"; then
+    install -d "$STACK_DIR/config/jellio-shim"
+    install -m 0644 "$RESOURCE_DIR/jellio-shim.py" "$STACK_DIR/config/jellio-shim/jellio-shim.py"
+  fi
+fi
 if service_enabled "caddy"; then
   chown -R 1000:1000 "$STACK_DIR/config/caddy"
+fi
+if service_enabled "jellio-shim"; then
+  chown -R 1000:1000 "$STACK_DIR/config/jellio-shim"
 fi
 if service_enabled "jellyfin"; then
   chown -R 1000:1000 "$STACK_DIR/config/jellyfin"
@@ -378,10 +347,10 @@ if service_enabled "jellystat-db"; then
 fi
 chown -R 1000:1000 "$MEDIA_PATH"
 
-docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" pull
-docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d --remove-orphans
+docker_compose pull
+docker_compose up -d --remove-orphans
 recover_jellystat_db
-docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d jellystat
+docker_compose up -d jellystat
 
 configure_bazarr() {
   if ! service_enabled "bazarr" || ! service_enabled "sonarr" || ! service_enabled "radarr"; then
@@ -521,6 +490,6 @@ PY
 configure_bazarr
 
 if service_enabled "bazarr"; then
-  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" up -d bazarr
-  docker compose --env-file "$STACK_DIR/.env" -f "$STACK_DIR/docker-compose.yml" restart bazarr
+  docker_compose up -d bazarr
+  docker_compose restart bazarr
 fi

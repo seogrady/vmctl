@@ -220,7 +220,12 @@ fn normalize_resource(
             }
         });
     let searchdomain = string_setting(resource, "searchdomain");
-    let hostname = hostname_setting(resource)?;
+    if resource.settings.contains_key("hostname") {
+        bail!(
+            "resource `{}` setting `hostname` is not supported; use `name` as the canonical hostname",
+            resource.name
+        );
+    }
 
     Ok(NormalizedResource {
         name: resource.name.clone(),
@@ -250,13 +255,13 @@ fn normalize_resource(
         agent: bool_setting(resource, "agent"),
         nameserver: string_setting(resource, "nameserver"),
         searchdomain: searchdomain.clone(),
-        hostname: hostname.clone(),
+        hostname: None,
         description: string_setting(resource, "description"),
         tags: string_array_setting(resource, "tags"),
         os_type: string_setting(resource, "os_type"),
         network: network_config(resource),
         cloud_init: cloud_init_config(resource),
-        provision: provision_config(resource, hostname.as_deref(), searchdomain.as_deref()),
+        provision: provision_config(resource, None, searchdomain.as_deref()),
         features: resource.features.clone(),
     })
 }
@@ -290,33 +295,6 @@ fn inferred_machine(resource: &Resource) -> Option<String> {
         .and_then(toml::Value::as_bool)
         .unwrap_or(false);
     intel_igpu_enabled.then(|| "q35".to_string())
-}
-
-fn hostname_setting(resource: &Resource) -> Result<Option<String>> {
-    match resource.settings.get("hostname") {
-        Some(toml::Value::String(hostname)) => return validate_hostname(resource, hostname),
-        Some(toml::Value::Boolean(true)) => return validate_hostname(resource, &resource.name),
-        Some(toml::Value::Boolean(false)) => return Ok(None),
-        Some(_) => bail!(
-            "resource `{}` hostname must be bool or string",
-            resource.name
-        ),
-        None => {}
-    }
-
-    if bool_setting(resource, "hostnames").unwrap_or(false) {
-        validate_hostname(resource, &resource.name)
-    } else {
-        Ok(None)
-    }
-}
-
-fn validate_hostname(resource: &Resource, hostname: &str) -> Result<Option<String>> {
-    let hostname = hostname.trim();
-    if hostname.is_empty() {
-        bail!("resource `{}` hostname cannot be empty", resource.name);
-    }
-    Ok(Some(hostname.to_string()))
 }
 
 fn string_array_setting(resource: &Resource, key: &str) -> Vec<String> {
@@ -403,7 +381,7 @@ fn cloud_init_config(resource: &Resource) -> Option<CloudInitConfig> {
 fn provision_config(
     resource: &Resource,
     hostname: Option<&str>,
-    searchdomain: Option<&str>,
+    _searchdomain: Option<&str>,
 ) -> Option<ProvisionConfig> {
     let table = resource.settings.get("provision")?.as_table()?;
     let explicit_host = table
@@ -411,7 +389,7 @@ fn provision_config(
         .and_then(toml::Value::as_str)
         .map(str::to_string);
     let host = explicit_host
-        .or_else(|| hostname.map(|hostname| provision_host(hostname, searchdomain)))
+        .or_else(|| hostname.map(str::to_string))
         .or_else(|| Some(resource.name.clone()));
     Some(ProvisionConfig {
         host,
@@ -434,16 +412,6 @@ fn provision_config(
     })
 }
 
-fn provision_host(hostname: &str, searchdomain: Option<&str>) -> String {
-    if hostname.contains('.') {
-        return hostname.to_string();
-    }
-    searchdomain
-        .filter(|domain| !domain.trim().is_empty())
-        .map(|domain| format!("{hostname}.{domain}"))
-        .unwrap_or_else(|| hostname.to_string())
-}
-
 fn validate_normalized_resources(resources: &BTreeMap<String, NormalizedResource>) -> Result<()> {
     for resource in resources.values() {
         if let Some(cloud_init) = &resource.cloud_init {
@@ -460,31 +428,8 @@ fn validate_normalized_resources(resources: &BTreeMap<String, NormalizedResource
                 );
             }
         }
-        if media_services_enabled(resource)
-            && resource
-                .searchdomain
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .is_empty()
-        {
-            bail!(
-                "resource `{}` media_services requires searchdomain; set defaults.searchdomain or resources.searchdomain",
-                resource.name
-            );
-        }
     }
     Ok(())
-}
-
-fn media_services_enabled(resource: &NormalizedResource) -> bool {
-    resource
-        .features
-        .get("media_services")
-        .and_then(toml::Value::as_table)
-        .and_then(|feature| feature.get("enabled"))
-        .and_then(toml::Value::as_bool)
-        .unwrap_or(false)
 }
 
 fn validate_dependencies(resources: &[Resource]) -> Result<()> {
@@ -708,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_media_services_without_searchdomain() {
+    fn accepts_media_services_without_searchdomain() {
         let mut input = resource("media-stack", "vm", vec![]);
         input.features.insert(
             "media_services".to_string(),
@@ -718,15 +663,11 @@ mod tests {
             )])),
         );
 
-        let err = validate_normalized_resources(&BTreeMap::from([(
+        let result = validate_normalized_resources(&BTreeMap::from([(
             input.name.clone(),
             normalize_resource(&input, &BTreeMap::new()).unwrap(),
-        )]))
-        .unwrap_err();
-
-        assert!(err
-            .to_string()
-            .contains("media_services requires searchdomain"));
+        )]));
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -838,10 +779,6 @@ mod tests {
     fn provision_defaults_to_resource_name_without_hostname_setting() {
         let mut input = resource("media-stack", "vm", vec![]);
         input.settings.insert(
-            "searchdomain".to_string(),
-            toml::Value::String("home.arpa".to_string()),
-        );
-        input.settings.insert(
             "provision".to_string(),
             toml::Value::Table(toml::map::Map::new()),
         );
@@ -856,80 +793,31 @@ mod tests {
     }
 
     #[test]
-    fn global_hostnames_default_to_resource_name_and_provision_fqdn() {
+    fn rejects_hostname_setting() {
         let mut input = resource("media-stack", "vm", vec![]);
-        input
-            .settings
-            .insert("hostnames".to_string(), toml::Value::Boolean(true));
-        input.settings.insert(
-            "searchdomain".to_string(),
-            toml::Value::String("home.arpa".to_string()),
-        );
-        input.settings.insert(
-            "provision".to_string(),
-            toml::Value::Table(toml::map::Map::from_iter([(
-                "user".to_string(),
-                toml::Value::String("ubuntu".to_string()),
-            )])),
-        );
-
-        let normalized = normalize_resource(&input, &BTreeMap::new()).unwrap();
-
-        assert_eq!(normalized.hostname, Some("media-stack".to_string()));
-        assert_eq!(
-            normalized.provision.and_then(|provision| provision.host),
-            Some("media-stack.home.arpa".to_string())
-        );
-    }
-
-    #[test]
-    fn resource_hostname_string_overrides_global_hostname() {
-        let mut input = resource("media-stack", "vm", vec![]);
-        input
-            .settings
-            .insert("hostnames".to_string(), toml::Value::Boolean(true));
         input.settings.insert(
             "hostname".to_string(),
             toml::Value::String("media".to_string()),
         );
-        input.settings.insert(
-            "searchdomain".to_string(),
-            toml::Value::String("home.arpa".to_string()),
-        );
-        input.settings.insert(
-            "provision".to_string(),
-            toml::Value::Table(toml::map::Map::new()),
-        );
-
-        let normalized = normalize_resource(&input, &BTreeMap::new()).unwrap();
-
-        assert_eq!(normalized.hostname, Some("media".to_string()));
-        assert_eq!(
-            normalized.provision.and_then(|provision| provision.host),
-            Some("media.home.arpa".to_string())
-        );
+        let err = normalize_resource(&input, &BTreeMap::new()).unwrap_err();
+        assert!(err.to_string().contains("setting `hostname` is not supported"));
     }
 
     #[test]
-    fn resource_hostname_false_disables_global_hostname() {
+    fn explicit_provision_host_still_works() {
         let mut input = resource("media-stack", "vm", vec![]);
-        input
-            .settings
-            .insert("hostnames".to_string(), toml::Value::Boolean(true));
-        input
-            .settings
-            .insert("hostname".to_string(), toml::Value::Boolean(false));
         input.settings.insert(
             "provision".to_string(),
-            toml::Value::Table(toml::map::Map::new()),
+            toml::Value::Table(toml::map::Map::from_iter([(
+                "host".to_string(),
+                toml::Value::String("custom-host".to_string()),
+            )])),
         );
 
         let normalized = normalize_resource(&input, &BTreeMap::new()).unwrap();
-
-        assert_eq!(normalized.hostname, None);
         assert_eq!(
             normalized.provision.and_then(|provision| provision.host),
-            Some("media-stack".to_string())
+            Some("custom-host".to_string())
         );
     }
 

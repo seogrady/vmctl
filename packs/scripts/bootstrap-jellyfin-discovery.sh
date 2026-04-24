@@ -87,7 +87,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=JELLYFIN_DISCOVERY_ADDRESS=${JELLYFIN_URL:-http://${VMCTL_HOST_FQDN:-${VMCTL_HOST_SHORT:-media-stack}.${VMCTL_SEARCHDOMAIN:-home.arpa}}:8096}
+Environment=JELLYFIN_DISCOVERY_ADDRESS=${JELLYFIN_URL:-http://${VMCTL_HOST_SHORT:-media-stack}:8096}
 ExecStart=/usr/local/lib/vmctl/jellyfin_discovery.py
 Restart=always
 RestartSec=2

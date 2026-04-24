@@ -11,6 +11,11 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 CONFIG_ROOT="${CONFIG_PATH:-/opt/media/config}"
 export CONFIG_ROOT
 ARR_RESTART_MARKER="/tmp/vmctl-arr-restart.list"
@@ -83,8 +88,8 @@ PY
 if [[ -s "$ARR_RESTART_MARKER" ]]; then
   mapfile -t arr_services < "$ARR_RESTART_MARKER"
   if ((${#arr_services[@]} > 0)); then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d "${arr_services[@]}"
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart "${arr_services[@]}"
+    docker_compose up -d "${arr_services[@]}"
+    docker_compose restart "${arr_services[@]}"
   fi
 fi
 

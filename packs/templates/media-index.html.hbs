@@ -24,20 +24,8 @@
     </li>
     {{/each}}
     <li>
-      <a id="jellio-manifest-lan-link" href="#">Stremio Manifest (LAN)</a>
-      <p>Primary LAN manifest. Uses the `home.arpa` FQDN for devices that do not resolve short hostnames reliably.</p>
-    </li>
-    <li>
-      <a id="jellio-manifest-lan-ip-link" href="#">Stremio Manifest (LAN IP)</a>
-      <p>LAN manifest that uses the server IP address. Use this for clients that cannot resolve `media-stack` or `media-stack.home.arpa` via DNS. This assumes the server has a stable IP (DHCP reservation or static IP).</p>
-    </li>
-    <li>
-      <a id="jellio-manifest-lan-short-link" href="#">Stremio Manifest (LAN Short Host)</a>
-      <p>Legacy LAN manifest using `http://media-stack`. Keep this for clients that already resolve the short host correctly.</p>
-    </li>
-    <li>
-      <a id="jellio-manifest-tailnet-link" href="#">Stremio Manifest (Tailnet)</a>
-      <p>Primary manifest for private HTTPS access over Tailscale.</p>
+      <a id="jellio-manifest-tailscale-link" href="#">Stremio Manifest (Tailscale)</a>
+      <p>Primary manifest for private access via Tailscale MagicDNS + Tailscale Serve.</p>
     </li>
     <li>
       <a id="jellio-manifest-cloudflare-link" href="#">Stremio Manifest (Cloudflare optional)</a>
@@ -72,10 +60,7 @@
           })
           .catch(function () {});
       }
-      wire("jellio-manifest-lan-link", "/jellio-manifest.lan.url");
-      wire("jellio-manifest-lan-ip-link", "/jellio-manifest.lan-ip.url");
-      wire("jellio-manifest-lan-short-link", "/jellio-manifest.lan-short.url");
-      wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
+      wire("jellio-manifest-tailscale-link", "/jellio-manifest.tailscale.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
 
       fetch("/jellyfin-autologin.url", { cache: "no-store" })

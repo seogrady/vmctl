@@ -47,16 +47,6 @@ env_file = Path(os.sys.argv[1])
 
 api_base_url = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
 host_server_name = (os.environ.get("VMCTL_RESOURCE_NAME") or "media-stack").strip()
-default_lan_short_base = os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or f"http://{host_server_name}"
-default_lan_fqdn_base = (
-    os.environ.get("VMCTL_HTTP_BASE_URL_FQDN")
-    or os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN")
-    or default_lan_short_base
-)
-default_lan_ip_base = (os.environ.get("VMCTL_HTTP_BASE_URL_IP") or "").strip()
-lan_public_base = default_lan_fqdn_base.strip().rstrip("/")
-lan_short_public_base = (os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN") or default_lan_short_base).strip().rstrip("/")
-lan_ip_public_base = (os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN_IP") or default_lan_ip_base).strip().rstrip("/")
 admin_user = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 admin_password = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 stremio_user = (os.environ.get("JELLYFIN_STREMIO_USER") or "stremio").strip()
@@ -249,9 +239,8 @@ request_json(
     allow=(),
 )
 
-lan_base = lan_public_base.rstrip("/")
 tail_dns = tailscale_dns_name()
-tailnet_base = f"https://{tail_dns}" if tail_dns else ""
+tailscale_base = f"https://{tail_dns}" if tail_dns else ""
 cloudflare_enabled = bool(cloudflare_base and cloudflare_token)
 
 
@@ -286,41 +275,26 @@ def make_manifest_with_config(addon_base: str) -> tuple[str, str]:
     return encoded, f"{addon_base.rstrip('/')}/jellio/{encoded}/manifest.json"
 
 
-lan_b64, lan_manifest = make_manifest_with_config(lan_base)
-lan_short_b64, lan_short_manifest = make_manifest_with_config(lan_short_public_base)
-lan_ip_b64, lan_ip_manifest = make_manifest_with_config(lan_ip_public_base) if lan_ip_public_base else ("", "")
-tailnet_b64, tailnet_manifest = make_manifest_with_config(tailnet_base) if tailnet_base else ("", "")
+tailscale_b64, tailscale_manifest = make_manifest_with_config(tailscale_base) if tailscale_base else ("", "")
 cloudflare_b64, cloudflare_manifest = make_manifest_with_config(cloudflare_base) if cloudflare_enabled else ("", "")
 
 # Stremio clients appear to have a relatively strict URL length limit for manifest URLs.
-# The generated /jellio/<b64>/manifest.json URL can exceed it (especially for tailnet HTTPS).
+# The generated /jellio/<b64>/manifest.json URL can exceed it (especially for Tailscale HTTPS).
 # To keep manifests addable, we expose short aliases that are rewritten by Caddy to the full path.
-lan_manifest_alias = f"{lan_base.rstrip('/')}/jellio-lan/manifest.json"
-lan_short_manifest_alias = f"{lan_short_public_base.rstrip('/')}/jellio-lan-short/manifest.json"
-lan_ip_manifest_alias = f"{lan_ip_public_base.rstrip('/')}/jellio-lan-ip/manifest.json" if lan_ip_public_base else ""
-tailnet_manifest_alias = f"{tailnet_base.rstrip('/')}/jellio-tailnet/manifest.json" if tailnet_base else ""
+tailscale_manifest_alias = f"{tailscale_base.rstrip('/')}/jellio-tailscale/manifest.json" if tailscale_base else ""
 cloudflare_manifest_alias = f"{cloudflare_base.rstrip('/')}/jellio-cloudflare/manifest.json" if cloudflare_enabled else ""
 
 set_env_value(env_file, "JELLYFIN_STREMIO_PASSWORD", stremio_password)
 set_env_value(env_file, "JELLYFIN_STREMIO_AUTH_TOKEN", stremio_token)
 # Config selectors used by Caddy alias routes.
-set_env_value(env_file, "JELLIO_CONFIG_B64_LAN", lan_b64)
-set_env_value(env_file, "JELLIO_CONFIG_B64_LAN_SHORT", lan_short_b64)
-set_env_value(env_file, "JELLIO_CONFIG_B64_LAN_IP", lan_ip_b64)
-set_env_value(env_file, "JELLIO_CONFIG_B64_TAILNET", tailnet_b64)
+set_env_value(env_file, "JELLIO_CONFIG_B64_TAILSCALE", tailscale_b64)
 set_env_value(env_file, "JELLIO_CONFIG_B64_CLOUDFLARE", cloudflare_b64)
-set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_LAN", lan_manifest)
-set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_LAN_IP", lan_ip_manifest)
-set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT", lan_short_manifest)
-set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_TAILNET", tailnet_manifest)
+set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_TAILSCALE", tailscale_manifest)
 set_env_value(env_file, "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE", cloudflare_manifest)
 
 ui_index = Path("/opt/media/config/caddy/ui-index")
 ui_index.mkdir(parents=True, exist_ok=True)
-(ui_index / "jellio-manifest.lan.url").write_text(lan_manifest_alias + "\n", encoding="utf-8")
-(ui_index / "jellio-manifest.lan-ip.url").write_text((lan_ip_manifest_alias or "") + "\n", encoding="utf-8")
-(ui_index / "jellio-manifest.lan-short.url").write_text(lan_short_manifest_alias + "\n", encoding="utf-8")
-(ui_index / "jellio-manifest.tailnet.url").write_text((tailnet_manifest_alias or "") + "\n", encoding="utf-8")
+(ui_index / "jellio-manifest.tailscale.url").write_text((tailscale_manifest_alias or "") + "\n", encoding="utf-8")
 (ui_index / "jellio-manifest.cloudflare.url").write_text((cloudflare_manifest_alias or "") + "\n", encoding="utf-8")
 PY
 

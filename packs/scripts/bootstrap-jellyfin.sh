@@ -247,7 +247,7 @@ if token:
         }
     )
     default_public_base = f"http://{os.environ.get('VMCTL_RESOURCE_NAME', 'media-stack')}"
-    autologin_base = (os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN") or default_public_base).rstrip("/")
+    autologin_base = (os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or default_public_base).rstrip("/")
     autologin_url = f"{autologin_base}:8097/web/#/home.html?{autologin_params}"
     set_env_value(env_file, "JELLYFIN_AUTOLOGIN_URL", autologin_url)
     ui_index = Path("/opt/media/config/caddy/ui-index")

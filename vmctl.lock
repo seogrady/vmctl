@@ -7,7 +7,7 @@ name = "tailscale-gateway"
 kind = "lxc"
 vmid = 101
 backend_address = "module.tailscale_gateway.proxmox_virtual_environment_container.this"
-digest = "sha256:ccadb5b73b3c688b332b0ed07f2a83e4264e602c51344cbf75982df5286859f9"
+digest = "sha256:0e844540fdc910ef450b8d1820511566d64f32c30908286d9723fdc28798af04"
 exists = true
 
 [[resources]]
@@ -15,7 +15,7 @@ name = "media-stack"
 kind = "vm"
 vmid = 210
 backend_address = "module.media_stack.proxmox_virtual_environment_vm.this"
-digest = "sha256:1dc20b4935bd1510a6e6c803fed80210ad1f705cdc0050cbaa8ad58624e3c6d4"
+digest = "sha256:8e03df2ddb6d4bdbd41a28cbdfe952b130c90fe9dbdb74ec6a07f6688ba6dd72"
 exists = true
 
 [[resources]]
@@ -23,7 +23,7 @@ name = "kodi-htpc"
 kind = "vm"
 vmid = 211
 backend_address = "module.kodi_htpc.proxmox_virtual_environment_vm.this"
-digest = "sha256:9091e9a4d48e676c3b4a03c56589792ef88b5f65de5d8a1ca08b67c2421435ec"
+digest = "sha256:ecc8967f9e7b8bcd3e2a4a02ebb6db2bf8a13b1eaaa00290ce007509d7648280"
 exists = true
 
 [[artifacts]]
@@ -56,11 +56,11 @@ digest = "sha256:1936aefac902f77b492259cbf9649c367de2fa7c0e743ca47614e9acbefabea
 
 [[artifacts]]
 path = "desired-state.json"
-digest = "sha256:ca4c971c3ee4776f31466659bcb89de2d0489d7f4b15c0716afbb35daf0567d1"
+digest = "sha256:2cc952a0b0073316a5f65fbce5cbe8d2f992c963969bc83a3f58be2452fbfaf0"
 
 [[artifacts]]
 path = "main.tf.json"
-digest = "sha256:f2f150aa843cd8b51c6026323a4c30185cfe2b7b9be690b956802880af5833c8"
+digest = "sha256:b98372fc8c01784449eaef315bb944a113d1886d085f658ef3c8dbe6c69623c3"
 
 [[artifacts]]
 path = "modules/lxc/main.tf.json"
@@ -96,15 +96,15 @@ digest = "sha256:25a648e2113f1c363bf2c68671f1a2dd0623034bf374400836c7c6b9f620f59
 
 [[artifacts]]
 path = "resources/kodi-htpc/kodi.env"
-digest = "sha256:3565cce9d0a30443506cb198578ffb5b0abcef64adcc9e82ff19ae8ee9ae356a"
+digest = "sha256:a0c5d2a803d134a57da4718be47c90fe88bcc6f3fb7f8bed0543bb2f777f3161"
 
 [[artifacts]]
 path = "resources/kodi-htpc/scripts/bootstrap-kodi-jellyfin.sh"
-digest = "sha256:a21d5542f637fcd13eb4925089a8eec53e9890940bad2035116202f0ce9ad44a"
+digest = "sha256:5a2e45319fab53add4541f8a0f144145b6d07708d700395840a3273694a8e4d6"
 
 [[artifacts]]
 path = "resources/kodi-htpc/scripts/bootstrap-kodi.sh"
-digest = "sha256:aa5ba95cff8f955e13d423fdb2dc35bf9d351b01323d8c8efe49b2f2873278e4"
+digest = "sha256:a639e68b29148428991b894c0be4f413b1d420291420f719128070256351df9e"
 
 [[artifacts]]
 path = "resources/kodi-htpc/scripts/bootstrap-node.sh"
@@ -120,7 +120,7 @@ digest = "sha256:6aa802c64bd08065b05755eb40fd15993cce4a95759d27e3a64d6c909c839cb
 
 [[artifacts]]
 path = "resources/media-stack/caddyfile.media"
-digest = "sha256:22cad3aba3559321ee1ec7feebbdc009d53d8fc116835a61b6bee345e532f721"
+digest = "sha256:0d54a7183f5d9bfbc13c7580c4cd199e744d6aabdbbc59943c982b981a5c1d4c"
 
 [[artifacts]]
 path = "resources/media-stack/docker-compose.media"
@@ -132,11 +132,11 @@ digest = "sha256:1016e059723a0a50f1dc58b3b2896e05dc2062b649e5230fc1590786d4e5c06
 
 [[artifacts]]
 path = "resources/media-stack/media-index.html"
-digest = "sha256:d28397a998afa122f6bb93d3e685a39b3feea41100b42187978440526555e143"
+digest = "sha256:cdf38c28e63a39c2faef2fbd6504ae977db6b49765fec7750bbe284fe96a6cc1"
 
 [[artifacts]]
 path = "resources/media-stack/media.env"
-digest = "sha256:bb04105b8aa266909bd491d9e3fca8f3dc798630f4ff7323a58a664df6ca0b03"
+digest = "sha256:1632727b5d2363cb0dfad9edc6554e16d907ab0f2b9deee7928254fab88685c1"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-arr.sh"
@@ -148,7 +148,7 @@ digest = "sha256:bc042b6e7f1002a9c25b5aa40c0731d23f54a1bc84172e1a470daab4c59b7de
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellio.sh"
-digest = "sha256:56a1a8989a4175c4127b79efbd7067777a7a250d35a3b378d1458f88f77b4547"
+digest = "sha256:1457d06b7db81884f7bdcb0ffc9a76751af8bf7a7090c6a3fab7a2ceca8bac10"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyfin-plugins.sh"
@@ -156,7 +156,7 @@ digest = "sha256:eaa56a29ee94c243b5564a172beb9afd6ba1c1a437d6d2f4df2ff7baca518ee
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyfin.sh"
-digest = "sha256:bec9ae5a580bcdc3c6525ad55476d6ca4f7bf0aac078e190039744c455c058cc"
+digest = "sha256:67d949e3f83c43075ed0c9ccad5299d6da0c8ed88403f7b1a2b872728ac65407"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellysearch.sh"
@@ -172,7 +172,7 @@ digest = "sha256:89ba0213fbb06c51aa3dc08cd1e117aae1a7a9311cffe10b4059654e3cfb25a
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-media.sh"
-digest = "sha256:484487ecdd09fe4d82aab8e96db4a7e2359f1fcf8834676a6061244ac2b99e89"
+digest = "sha256:3c2a0ab0618496416ca588f966591fb1eb1f8c15d335fec1b62bcdfd21193101"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-node.sh"
@@ -196,7 +196,7 @@ digest = "sha256:e1a2f6322ceb9d59c124ab621af248e5d53a5530cfd261448abcaea124c94b2
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
-digest = "sha256:b50ec31fef58f84af0eec9752468bcdb152c0f624be613a40aa948487ff013cc"
+digest = "sha256:4754456acd18fde7a7709bcfc07170bfbdfc35ba5f08ee66500da72f5c9faf23"
 
 [[artifacts]]
 path = "resources/media-stack/tailscale-setup.sh"
@@ -216,7 +216,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:795726f4deafcb5b1eae7f3a6b562c3a9b8c9b3c9fbf56e896b8cc888551db2b"
+digest = "sha256:1be3498e8ba84f19e12be419b1744b5aaabf87405794cd3c03f234dc0eeffd98"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -224,11 +224,11 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:5a85344fe6b766e9956244203db52cc13a3ce1d0b5fb7a6e035e28eda2720162"
+digest = "sha256:270e90a8cf059bead4c119566b7d2262778770fb315f9c5d934b91350f94d88b"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
-digest = "sha256:4096822a120595d9ed38b30b417b1cb44b87b41f3b8677a5abda97c5b918899d"
+digest = "sha256:68981e0a824846627cdf20e9bbf7cd2145494c76ee389a2d074b3283f7b05dc7"
 
 [[artifacts]]
 path = "variables.tf.json"

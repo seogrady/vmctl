@@ -11,6 +11,11 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 python3 <<'PY'
 import http.cookiejar
 import json
@@ -283,8 +288,8 @@ settings["radarr"] = [{
 JELLYSEERR_SETTINGS.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 PY
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d jellyseerr
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart jellyseerr
+docker_compose up -d jellyseerr
+docker_compose restart jellyseerr
 
 for _ in $(seq 1 90); do
   if curl -fsS "http://localhost:5055/api/v1/settings/public" | grep -q '"initialized":true'; then

@@ -3,6 +3,7 @@ set -euo pipefail
 
 STACK_DIR="/opt/media"
 ENV_FILE="$STACK_DIR/.env"
+COMPOSE_FILE="$STACK_DIR/docker-compose.yml"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   exit 0
@@ -14,9 +15,7 @@ set +a
 
 MEDIA_SERVICES_CSV="${MEDIA_SERVICES:-}"
 VMCTL_HOST_SHORT="${VMCTL_HOST_SHORT:-${VMCTL_RESOURCE_NAME:-media-stack}}"
-VMCTL_HOST_FQDN="${VMCTL_HOST_FQDN:-${VMCTL_HOST_SHORT}.${VMCTL_SEARCHDOMAIN:-home.arpa}}"
 VMCTL_HTTP_BASE_URL_SHORT="${VMCTL_HTTP_BASE_URL_SHORT:-http://${VMCTL_HOST_SHORT}}"
-VMCTL_HTTP_BASE_URL_FQDN="${VMCTL_HTTP_BASE_URL_FQDN:-http://${VMCTL_HOST_FQDN}}"
 TIZEN_STREMIO_USER_AGENT="${TIZEN_STREMIO_USER_AGENT:-Mozilla/5.0 (SMART-TV; Linux; Tizen 6.5) AppleWebKit/537.36 Stremio}"
 
 service_enabled() {
@@ -25,6 +24,11 @@ service_enabled() {
     *,"$name",*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 check_http_ok() {
@@ -89,9 +93,10 @@ check_http_no_redirect() {
 }
 
 check_container_running() {
-  local name="$1"
-  if ! docker ps --format '{{.Names}}' | grep -qx "$name"; then
-    echo "validation failed: container not running: $name" >&2
+  local service="$1"
+  if ! docker_compose ps --status running --services | grep -qx "$service"; then
+    echo "validation failed: compose service not running: $service" >&2
+    docker_compose ps >&2 || true
     return 1
   fi
 }
@@ -158,7 +163,7 @@ if "jellysearch" in (os.environ.get("MEDIA_SERVICES", "")):
         if response.status != 200:
             raise RuntimeError("jellysearch integration check failed")
 
-for key in ("JELLIO_STREMIO_MANIFEST_URL_LAN", "JELLIO_STREMIO_MANIFEST_URL_LAN_IP", "JELLIO_STREMIO_MANIFEST_URL_TAILNET"):
+for key in ("JELLIO_STREMIO_MANIFEST_URL_TAILSCALE",):
     value = (os.environ.get(key) or "").strip()
     if not value:
         continue
@@ -191,19 +196,17 @@ if os.environ.get("TAILSCALE_HTTPS_ENABLED", "true").lower() not in {"false", "0
 PY
 
 if service_enabled "caddy"; then
-  check_container_running "media-caddy-1"
+  check_container_running "caddy"
   check_http_ok "http://127.0.0.1:80/" "caddy portal"
   check_http_no_redirect "${VMCTL_HTTP_BASE_URL_SHORT}/healthz" "${VMCTL_HOST_SHORT} LAN HTTP"
-  check_http_no_redirect "${VMCTL_HTTP_BASE_URL_FQDN}/healthz" "${VMCTL_HOST_FQDN} LAN HTTP"
 fi
 
 if service_enabled "jellyfin"; then
-  check_container_running "media-jellyfin-1"
+  check_container_running "jellyfin"
   check_http_ok "${JELLYFIN_INTERNAL_URL:-http://127.0.0.1:8096}/System/Info/Public" "jellyfin public info"
   if service_enabled "caddy"; then
     check_http_no_auth "http://127.0.0.1:8097/Users/Me" "jellyfin no-login proxy"
     check_http_ok "${VMCTL_HTTP_BASE_URL_SHORT}/jf/System/Info/Public" "jellyfin stremio proxy"
-    check_http_ok "${VMCTL_HTTP_BASE_URL_FQDN}/jf/System/Info/Public" "jellyfin stremio proxy fqdn"
     autologin_url="$(curl -fsS http://127.0.0.1:80/jellyfin-autologin.url | tr -d '\n\r' || true)"
     if [[ -z "$autologin_url" ]]; then
       echo "validation failed: empty jellyfin autologin URL" >&2
@@ -213,7 +216,7 @@ if service_enabled "jellyfin"; then
 fi
 
 if service_enabled "jellyseerr"; then
-  check_container_running "media-jellyseerr-1"
+  check_container_running "jellyseerr"
   check_http_ok "http://127.0.0.1:5055/api/v1/status" "jellyseerr status"
   if service_enabled "caddy"; then
     check_http_ok "http://127.0.0.1:5056/api/v1/settings/public" "jellyseerr proxied public settings"
@@ -442,7 +445,7 @@ PY
 fi
 
 if service_enabled "caddy"; then
-  for key in lan tailnet; do
+  for key in tailscale; do
     url_file="http://127.0.0.1:80/jellio-manifest.${key}.url"
     manifest_url="$(curl -fsS "$url_file" | tr -d '\n\r')"
     if [[ -z "$manifest_url" ]]; then
@@ -459,10 +462,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-manifest_url = (os.environ.get("JELLIO_STREMIO_MANIFEST_URL_LAN") or "").strip()
+manifest_url = (os.environ.get("JELLIO_STREMIO_MANIFEST_URL_TAILSCALE") or "").strip()
 ua = os.environ.get("TIZEN_STREMIO_USER_AGENT") or "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.5) Stremio"
 if not manifest_url:
-    raise SystemExit("validation failed: missing JELLIO_STREMIO_MANIFEST_URL_LAN")
+    raise SystemExit("validation failed: missing JELLIO_STREMIO_MANIFEST_URL_TAILSCALE")
 
 
 def get_json(url: str):

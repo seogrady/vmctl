@@ -109,13 +109,9 @@ preserve = {
     "POSTGRES_PASSWORD",
     "JWT_SECRET",
     "MEILI_MASTER_KEY",
-    "MEDIA_PUBLIC_BASE_URL_LAN",
     "JELLYFIN_STREMIO_PASSWORD",
     "JELLYFIN_STREMIO_AUTH_TOKEN",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN_IP",
-    "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT",
-    "JELLIO_STREMIO_MANIFEST_URL_TAILNET",
+    "JELLIO_STREMIO_MANIFEST_URL_TAILSCALE",
     "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE",
     "CLOUDFLARE_PUBLIC_BASE_URL",
     "CLOUDFLARED_TOKEN",
@@ -218,47 +214,6 @@ detect_primary_ipv4() {
   }'
 }
 
-ensure_hostname_aliases() {
-  local primary_ip="$1"
-  VMCTL_HOST_SHORT="${VMCTL_HOST_SHORT:-${VMCTL_RESOURCE_NAME:-media-stack}}" \
-  VMCTL_HOST_FQDN="${VMCTL_HOST_FQDN:-${VMCTL_HOST_SHORT}.${VMCTL_SEARCHDOMAIN:-home.arpa}}" \
-  python3 - "$primary_ip" <<'PY'
-from pathlib import Path
-import os
-import sys
-
-primary_ip = sys.argv[1].strip()
-if not primary_ip:
-    raise SystemExit(0)
-
-host_short = (os.environ.get("VMCTL_HOST_SHORT") or "media-stack").strip()
-host_fqdn = (os.environ.get("VMCTL_HOST_FQDN") or host_short).strip()
-host_aliases = [value for value in [host_fqdn, host_short] if value]
-
-hosts_path = Path("/etc/hosts")
-lines = hosts_path.read_text(encoding="utf-8").splitlines()
-replacement = f"{primary_ip} {' '.join(host_aliases)}"
-updated = []
-done = False
-for line in lines:
-    stripped = line.strip()
-    if stripped.startswith("127.0.1.1 ") and any(alias in stripped for alias in host_aliases):
-        if not done:
-            updated.append(replacement)
-            done = True
-        continue
-    if stripped.startswith(primary_ip + " ") and any(alias in stripped for alias in host_aliases):
-        if not done:
-            updated.append(replacement)
-            done = True
-        continue
-    updated.append(line)
-if not done:
-    updated.insert(0, replacement)
-hosts_path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
-PY
-}
-
 sync_template_env_defaults() {
   local template_file="$1"
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -283,14 +238,11 @@ fi
 
 if service_enabled "jellyfin"; then
   current_jellyfin_internal_url="$(grep -E '^JELLYFIN_INTERNAL_URL=' "$STACK_DIR/.env" | tail -n1 | cut -d= -f2- || true)"
-  vmctl_host_short="${VMCTL_HOST_SHORT:-${VMCTL_RESOURCE_NAME:-media-stack}}"
-  vmctl_host_fqdn="${VMCTL_HOST_FQDN:-${vmctl_host_short}.${VMCTL_SEARCHDOMAIN:-home.arpa}}"
   case "$current_jellyfin_internal_url" in
-    ""|http://127.0.0.1:8096|http://127.0.1.1:8096|http://localhost:8096|"http://${vmctl_host_short}:8096"|"http://${vmctl_host_fqdn}:8096")
+    ""|http://127.0.0.1:8096|http://127.0.1.1:8096|http://localhost:8096|http://media-stack:8096)
       primary_ip="$(detect_primary_ipv4 || true)"
       if [[ -n "$primary_ip" ]]; then
         set_env_value "$STACK_DIR/.env" "JELLYFIN_INTERNAL_URL" "http://${primary_ip}:8096"
-        ensure_hostname_aliases "$primary_ip"
       fi
       ;;
   esac

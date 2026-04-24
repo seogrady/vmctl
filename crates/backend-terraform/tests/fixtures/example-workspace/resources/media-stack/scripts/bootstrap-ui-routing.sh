@@ -11,8 +11,13 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d caddy
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart caddy
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+docker_compose up -d caddy
+docker_compose restart caddy
 
 python3 <<'PY'
 import time

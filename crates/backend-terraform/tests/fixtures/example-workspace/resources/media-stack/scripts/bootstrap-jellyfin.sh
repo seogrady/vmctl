@@ -11,6 +11,11 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
+docker_compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 CONFIG_ROOT="${CONFIG_PATH:-/opt/media/config}"
 BASE_URL_VALUE=""
 JELLYFIN_NETWORK_XML="$CONFIG_ROOT/jellyfin/network.xml"
@@ -52,8 +57,8 @@ PY
 )"
 
 if [[ "$jellyfin_base_updated" == "1" ]]; then
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d jellyfin
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart jellyfin
+  docker_compose up -d jellyfin
+  docker_compose restart jellyfin
 fi
 
 python3 <<'PY'
@@ -242,7 +247,7 @@ if token:
         }
     )
     default_public_base = f"http://{os.environ.get('VMCTL_RESOURCE_NAME', 'media-stack')}"
-    autologin_base = (os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or os.environ.get("MEDIA_PUBLIC_BASE_URL_LAN") or default_public_base).rstrip("/")
+    autologin_base = (os.environ.get("VMCTL_HTTP_BASE_URL_SHORT") or default_public_base).rstrip("/")
     autologin_url = f"{autologin_base}:8097/web/#/home.html?{autologin_params}"
     set_env_value(env_file, "JELLYFIN_AUTOLOGIN_URL", autologin_url)
     ui_index = Path("/opt/media/config/caddy/ui-index")
@@ -250,9 +255,9 @@ if token:
     (ui_index / "jellyfin-autologin.url").write_text(autologin_url + "\n", encoding="utf-8")
 PY
 
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --services | grep -qx "caddy"; then
+if docker_compose config --services | grep -qx "caddy"; then
   set -a
   . "$ENV_FILE"
   set +a
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate caddy
+  docker_compose up -d --force-recreate caddy
 fi

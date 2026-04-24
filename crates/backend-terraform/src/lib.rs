@@ -1886,7 +1886,7 @@ mod tests {
         assert!(script.contains("KODI_CHORUS2_REF"));
         assert!(script.contains("name=\"Kodi web interface - Chorus2\""));
         assert!(script.contains("https://github.com/xbmc/chorus2/archive/refs/tags"));
-        assert!(script.contains("media-stack.lan:/media /media nfs4"));
+        assert!(script.contains("media-stack:/media /media nfs4"));
         assert!(script.contains("reverse_proxy 127.0.0.1:${KODI_WEB_PORT}"));
         assert!(script.contains("Chorus 2 - Kodi web interface"));
         assert!(!script.contains("repair_kodi_web_assets"));
@@ -1955,10 +1955,9 @@ mod tests {
         );
         assert!(script.contains("sync_env_from_template()"));
         assert!(script.contains("\"MEILI_MASTER_KEY\""));
-        assert!(script.contains("\"MEDIA_PUBLIC_BASE_URL_LAN\""));
         assert!(script.contains("\"JELLYFIN_STREMIO_PASSWORD\""));
         assert!(script.contains("\"JELLYFIN_STREMIO_AUTH_TOKEN\""));
-        assert!(script.contains("\"JELLIO_STREMIO_MANIFEST_URL_TAILNET\""));
+        assert!(script.contains("\"JELLIO_STREMIO_MANIFEST_URL_TAILSCALE\""));
         assert!(script.contains("\"CLOUDFLARED_TOKEN\""));
         assert!(script.contains("ensure_env_value \"$STACK_DIR/.env\" \"JELLYSEERR_API_KEY\""));
         assert!(script.contains("html.unescape(value)"));
@@ -1967,9 +1966,9 @@ mod tests {
         assert!(script.contains("service_enabled()"));
         assert!(script.contains("sync_template_env_defaults()"));
         assert!(script.contains("sync_template_env_defaults \"$RESOURCE_DIR/media.env\""));
-        assert!(script.contains("VMCTL_HOST_SHORT"));
-        assert!(script.contains("VMCTL_HOST_FQDN"));
-        assert!(script.contains("host_aliases"));
+        assert!(!script.contains("MEDIA_PUBLIC_BASE_URL_LAN"));
+        assert!(!script.contains("VMCTL_HOST_FQDN"));
+        assert!(!script.contains("/etc/hosts"));
         assert!(!script.contains("chown -R 1000:1000 \"$STACK_DIR/config\""));
         assert!(script.contains("chown -R 70:70 \"$STACK_DIR/config/jellystat-db\""));
         assert!(script.contains("recover_jellystat_db()"));
@@ -2016,7 +2015,7 @@ mod tests {
             "../tests/fixtures/example-workspace/resources/media-stack/caddyfile.media"
         );
         assert!(caddy.contains("auto_https off"));
-        assert!(caddy.contains("media-stack:80, media-stack.home.arpa:80, :80"));
+        assert!(caddy.contains(":80 {"));
         assert!(caddy.contains("handle_path /healthz"));
         assert!(caddy.contains("header -Strict-Transport-Security"));
         assert!(caddy.contains("log {"));
@@ -2024,6 +2023,9 @@ mod tests {
         assert!(caddy.contains("@tizen_jellio"));
         assert!(caddy.contains("path /jellio/*"));
         assert!(caddy.contains("handle /jellio/*"));
+        assert!(!caddy.contains("/jellio-lan/"));
+        assert!(!caddy.contains("/jellio-lan-ip/"));
+        assert!(!caddy.contains("/jellio-lan-short/"));
         assert!(caddy.contains("handle_path /jf/*"));
         assert!(caddy.contains("handle /Items/*"));
         assert!(caddy.contains("handle /items/*"));
@@ -2051,17 +2053,11 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellio.sh"
         );
-        assert!(script.contains("MEDIA_PUBLIC_BASE_URL_LAN"));
-        assert!(script.contains("VMCTL_HTTP_BASE_URL_SHORT"));
-        assert!(script.contains("VMCTL_HTTP_BASE_URL_FQDN"));
-        assert!(script.contains("VMCTL_HTTP_BASE_URL_IP"));
         assert!(script.contains("host_server_name = (os.environ.get(\"VMCTL_RESOURCE_NAME\")"));
         assert!(script.contains("jellyfin_public_base = f\"{addon_base.rstrip('/')}/jf\""));
         assert!(script.contains("\"PublicBaseUrl\": jellyfin_public_base"));
-        assert!(script.contains("set_env_value(env_file, \"JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT\", lan_short_manifest)"));
-        assert!(script.contains("set_env_value(env_file, \"JELLIO_STREMIO_MANIFEST_URL_LAN_IP\", lan_ip_manifest)"));
-        assert!(script.contains("(ui_index / \"jellio-manifest.lan-ip.url\").write_text"));
-        assert!(script.contains("(ui_index / \"jellio-manifest.lan-short.url\").write_text"));
+        assert!(!script.contains("JELLIO_STREMIO_MANIFEST_URL_LAN"));
+        assert!(!script.contains("jellio-manifest.lan"));
         assert!(
             script.contains("return f\"{addon_base.rstrip('/')}/jellio/{encoded}/manifest.json\"")
         );
@@ -2074,14 +2070,12 @@ mod tests {
         let env =
             include_str!("../tests/fixtures/example-workspace/resources/media-stack/media.env");
         assert!(env.contains("VMCTL_RESOURCE_NAME=media-stack"));
-        assert!(env.contains("VMCTL_SEARCHDOMAIN=home.arpa"));
         assert!(env.contains("VMCTL_HOST_SHORT=media-stack"));
-        assert!(env.contains("VMCTL_HOST_FQDN=media-stack.home.arpa"));
         assert!(env.contains("VMCTL_HTTP_BASE_URL_SHORT=http://media-stack"));
-        assert!(env.contains("VMCTL_HTTP_BASE_URL_FQDN=http://media-stack.home.arpa"));
-        assert!(env.contains("VMCTL_HTTP_BASE_URL_IP="));
-        assert!(env.contains("MEDIA_PUBLIC_BASE_URL_LAN=http://media-stack"));
-        assert!(env.contains("JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT="));
+        assert!(!env.contains("VMCTL_SEARCHDOMAIN="));
+        assert!(!env.contains("VMCTL_HOST_FQDN="));
+        assert!(!env.contains("VMCTL_HTTP_BASE_URL_FQDN="));
+        assert!(!env.contains("JELLIO_STREMIO_MANIFEST_URL_LAN"));
     }
 
     #[test]
@@ -2112,7 +2106,7 @@ mod tests {
         let index = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/media-index.html"
         );
-        assert!(index.contains("Stremio Manifest (LAN Short Host)"));
+        assert!(index.contains("Stremio Manifest (Tailscale)"));
         assert!(index.contains("data-service-port=\"8097\""));
         assert!(index.contains("data-service-port=\"5056\""));
         assert!(index.contains("data-service-port=\"8989\""));
@@ -2121,11 +2115,11 @@ mod tests {
         assert!(index.contains("data-service-port=\"8080\""));
         assert!(index.contains("data-service-path=\"/\""));
         assert!(index.contains("link.href = \"http://\" + host + \":\" + port + path;"));
-        assert!(index.contains("wire(\"jellio-manifest-lan-link\", \"/jellio-manifest.lan.url\");"));
-        assert!(index.contains("wire(\"jellio-manifest-lan-ip-link\", \"/jellio-manifest.lan-ip.url\");"));
-        assert!(index.contains("wire(\"jellio-manifest-lan-short-link\", \"/jellio-manifest.lan-short.url\");"));
+        assert!(!index.contains("jellio-manifest.lan.url"));
+        assert!(!index.contains("jellio-manifest.lan-ip.url"));
+        assert!(!index.contains("jellio-manifest.lan-short.url"));
         assert!(index
-            .contains("wire(\"jellio-manifest-tailnet-link\", \"/jellio-manifest.tailnet.url\");"));
+            .contains("wire(\"jellio-manifest-tailscale-link\", \"/jellio-manifest.tailscale.url\");"));
         assert!(index.contains(
             "wire(\"jellio-manifest-cloudflare-link\", \"/jellio-manifest.cloudflare.url\");"
         ));

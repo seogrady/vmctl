@@ -82,7 +82,7 @@
         "role": "kodi_htpc",
         "rootfs_gb": null,
         "scsi_hardware": "virtio-scsi-single",
-        "searchdomain": "home.arpa",
+        "searchdomain": null,
         "start_on_boot": true,
         "storage": "local-lvm",
         "tags": [
@@ -130,11 +130,12 @@
             },
             "jellyfin_admin_password": "dummy-jellyfin-password",
             "jellyfin_admin_user": "admin",
-            "jellyfin_url": "http://media-stack.home.arpa:8096",
+            "jellyfin_url": "http://media-stack:8096",
             "minimal": true,
             "services": [
               "caddy",
               "gluetun",
+              "jellio-shim",
               "jellyfin",
               "meilisearch",
               "jellysearch",
@@ -199,7 +200,7 @@
         "role": "media_stack",
         "rootfs_gb": null,
         "scsi_hardware": "virtio-scsi-single",
-        "searchdomain": "home.arpa",
+        "searchdomain": null,
         "start_on_boot": true,
         "storage": "local-lvm",
         "tags": [
@@ -276,7 +277,7 @@
         "role": "tailscale_gateway",
         "rootfs_gb": 8,
         "scsi_hardware": null,
-        "searchdomain": "home.arpa",
+        "searchdomain": null,
         "start_on_boot": true,
         "storage": "local-lvm",
         "tags": [

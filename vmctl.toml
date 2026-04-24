@@ -15,7 +15,6 @@ tls_insecure = true
 bridge = "${bridge}"
 storage = "local-lvm"
 nameserver = "1.1.1.1"
-searchdomain = "${domain}"
 start_on_boot = true
 agent = true
 tags = ["vmctl", "homelab"]
@@ -31,7 +30,6 @@ retry_delay_seconds = 15
 
 [const]
 bridge = "vmbr0"
-domain = "home.arpa"
 tailscale_gateway = "tailscale-gateway"
 media_stack = "media-stack"
 default_tailnet_tag = "tag:homelab"
@@ -139,7 +137,7 @@ tags = ["${default_tailnet_tag}"]
 enabled = true
 minimal = true
 services = ["caddy", "gluetun", "jellio-shim", "jellyfin", "meilisearch", "jellysearch", "sonarr", "radarr", "prowlarr", "qbittorrent-vpn", "jellyseerr", "bazarr", "jellystat-db", "jellystat"]
-jellyfin_url = "http://${media_stack}.${domain}:8096"
+jellyfin_url = "http://${media_stack}:8096"
 jellyfin_admin_user = "${JELLYFIN_ADMIN_USER}"
 jellyfin_admin_password = "${JELLYFIN_ADMIN_PASSWORD}"
 ui_homepage_enabled = true

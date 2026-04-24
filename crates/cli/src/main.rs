@@ -852,113 +852,7 @@ fn lxc_next_device_slot(config: &str) -> Option<String> {
         .map(|slot| format!("dev{slot}"))
 }
 
-fn ensure_provision_hosts_resolve(desired: &DesiredState) -> Result<()> {
-    for resource in desired.normalized_resources.values() {
-        if resource.kind != "vm" && resource.kind != "lxc" {
-            continue;
-        }
-        if resource.kind == "vm" && resource.started == Some(false) {
-            continue;
-        }
-        let Some(host) = resource
-            .provision
-            .as_ref()
-            .and_then(|provision| provision.host.as_deref())
-            .filter(|host| !host.trim().is_empty())
-        else {
-            continue;
-        };
-        let mut aliases = BTreeSet::from([host.to_string(), resource.name.clone()]);
-        if let Some(searchdomain) = resource
-            .searchdomain
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            aliases.insert(format!("{}.{}", resource.name, searchdomain.trim()));
-        }
-        if let Some(hostname) = resource
-            .hostname
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            aliases.insert(hostname.to_string());
-            if let Some(searchdomain) = resource
-                .searchdomain
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-            {
-                aliases.insert(format!("{}.{}", hostname.trim(), searchdomain.trim()));
-            }
-        }
-
-        let discovered_ip = resource
-            .vmid
-            .and_then(|vmid| discover_resource_ipv4_with_retries(&resource.kind, vmid));
-        let resolved_ip =
-            select_provision_ip(resource.vmid, discovered_ip, resolve_host_ipv4(host));
-        let Some(ip) = resolved_ip else {
-            if resource.vmid.is_none() {
-                bail!(
-                    "provision host `{host}` for `{}` does not resolve and the resource has no vmid for DHCP discovery",
-                    resource.name
-                );
-            }
-            bail!(
-                "vmctl could not discover a current DHCP address for managed resource `{}` (host `{host}`). Wait for the guest to boot networking and rerun apply.",
-                resource.name
-            );
-        };
-        let aliases = aliases.into_iter().collect::<Vec<_>>();
-        upsert_hosts_file(&aliases, &ip, &resource.name)?;
-        println!(
-            "[vmctl] resolved {} to {ip} via /etc/hosts for provisioning",
-            aliases.join(", ")
-        );
-    }
-    Ok(())
-}
-
-fn resolve_host_ipv4(host: &str) -> Option<String> {
-    let output = command_runner::run(
-        CommandOptions::new("getent", ["ahostsv4", host])
-            .timeout(Duration::from_secs(10))
-            .prefix(LogPrefix::Vmctl)
-            .stream(false)
-            .fail_on_proxmox_patterns(false),
-    )
-    .ok()?;
-    output
-        .stdout
-        .lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .find(|value| value.parse::<std::net::Ipv4Addr>().is_ok())
-        .map(str::to_string)
-}
-
-fn select_provision_ip(
-    vmid: Option<u32>,
-    discovered_ip: Option<String>,
-    resolved_ip: Option<String>,
-) -> Option<String> {
-    if vmid.is_some() {
-        discovered_ip
-    } else {
-        discovered_ip.or(resolved_ip)
-    }
-}
-
-fn discover_resource_ipv4_with_retries(kind: &str, vmid: u32) -> Option<String> {
-    let attempts = if cfg!(test) { 1 } else { 12 };
-    let retry_delay = if cfg!(test) {
-        Duration::from_millis(0)
-    } else {
-        Duration::from_secs(5)
-    };
-    discover_with_retry(attempts, retry_delay, || {
-        discover_resource_ipv4(kind, vmid).ok().flatten()
-    })
-}
-
+#[cfg(test)]
 fn discover_with_retry<F>(attempts: u32, retry_delay: Duration, mut discover: F) -> Option<String>
 where
     F: FnMut() -> Option<String>,
@@ -977,67 +871,7 @@ where
     None
 }
 
-fn discover_resource_ipv4(kind: &str, vmid: u32) -> Result<Option<String>> {
-    let vmid = vmid.to_string();
-    let config = match kind {
-        "vm" => safe_command_output("qm", &["config", &vmid], Duration::from_secs(20)),
-        "lxc" => safe_command_output("pct", &["config", &vmid], Duration::from_secs(20)),
-        _ => None,
-    };
-    let Some(config) = config else {
-        return Ok(None);
-    };
-    let Some(mac) = primary_config_mac(&config) else {
-        return Ok(None);
-    };
-    let bridge = primary_config_bridge(&config).unwrap_or("vmbr0");
-    if let Some(output) = safe_command_output(
-        "arp-scan",
-        &["--interface", bridge, "--localnet"],
-        Duration::from_secs(30),
-    ) {
-        return Ok(ip_for_mac_from_arp_scan(&output, mac));
-    }
-    Ok(None)
-}
-
-fn upsert_hosts_file(hosts: &[String], ip: &str, resource: &str) -> Result<()> {
-    let path = Path::new("/etc/hosts");
-    let current = std::fs::read_to_string(path).unwrap_or_default();
-    let updated = upsert_hosts_content(&current, hosts, ip, resource);
-    if updated != current {
-        std::fs::write(path, updated).with_context(|| {
-            format!(
-                "failed to update {} so `{resource}` resolves",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
-fn upsert_hosts_content(content: &str, hosts: &[String], ip: &str, resource: &str) -> String {
-    let marker = format!("# vmctl:{resource}");
-    let aliases = hosts
-        .iter()
-        .map(|host| host.trim())
-        .filter(|host| !host.is_empty())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let entry = format!("{ip}\t{aliases}\t{marker}");
-    let mut lines: Vec<String> = content
-        .lines()
-        .filter(|line| !line.contains(&marker))
-        .map(str::to_string)
-        .collect();
-    lines.push(entry);
-    let mut output = lines.join("\n");
-    output.push('\n');
-    output
-}
-
+#[cfg(test)]
 fn primary_config_mac(config: &str) -> Option<&str> {
     let net0 = config_value(config, "net0")?;
     if let Some(value) = net0.split(',').find_map(|field| {
@@ -1060,6 +894,7 @@ fn primary_config_mac(config: &str) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
+#[cfg(test)]
 fn primary_config_bridge(config: &str) -> Option<&str> {
     let net0 = config_value(config, "net0")?;
     net0.split(',').find_map(|field| {
@@ -1068,6 +903,7 @@ fn primary_config_bridge(config: &str) -> Option<&str> {
     })
 }
 
+#[cfg(test)]
 fn ip_for_mac_from_arp_scan(output: &str, mac: &str) -> Option<String> {
     let expected = mac.to_ascii_lowercase();
     output.lines().find_map(|line| {
@@ -2509,7 +2345,6 @@ fn run_provision(
     desired: &DesiredState,
     progress: &ApplyProgress,
 ) -> Result<vmctl_provision::ProvisionResult> {
-    ensure_provision_hosts_resolve(desired)?;
     let plan = vmctl_provision::build_provision_plan(workspace, desired)?;
     if plan.steps.is_empty() {
         return Ok(vmctl_provision::ProvisionResult {
@@ -2732,7 +2567,7 @@ mod tests {
 
     use super::*;
     use clap::CommandFactory;
-    use vmctl_domain::{BackendConfig, ProvisionConfig, Resource};
+    use vmctl_domain::{BackendConfig, Resource};
 
     #[test]
     fn backend_validate_accepts_live_flag() {
@@ -3439,22 +3274,6 @@ Interface: vmbr0
     }
 
     #[test]
-    fn select_provision_ip_for_managed_resource_requires_discovery() {
-        assert_eq!(
-            select_provision_ip(
-                Some(101),
-                Some("192.168.86.110".to_string()),
-                Some("192.168.86.106".to_string())
-            ),
-            Some("192.168.86.110".to_string())
-        );
-        assert_eq!(
-            select_provision_ip(Some(101), None, Some("192.168.86.106".to_string())),
-            None
-        );
-    }
-
-    #[test]
     fn discover_with_retry_returns_successful_attempt() {
         let mut attempts = 0u32;
         let resolved = discover_with_retry(3, Duration::from_millis(0), || {
@@ -3464,54 +3283,6 @@ Interface: vmbr0
 
         assert_eq!(resolved, Some("192.168.86.110".to_string()));
         assert_eq!(attempts, 2);
-    }
-
-    #[test]
-    fn upsert_hosts_content_replaces_vmctl_marker_entry() {
-        let current = "127.0.0.1 localhost\n192.168.86.10\tmedia.home.arpa\t# vmctl:media-stack\n";
-
-        let updated = upsert_hosts_content(
-            current,
-            &[
-                "media-stack".to_string(),
-                "media-stack.home.arpa".to_string(),
-            ],
-            "192.168.86.103",
-            "media-stack",
-        );
-
-        assert!(updated.contains("127.0.0.1 localhost\n"));
-        assert!(updated
-            .contains("192.168.86.103\tmedia-stack media-stack.home.arpa\t# vmctl:media-stack\n"));
-        assert!(!updated.contains("192.168.86.10\tmedia.home.arpa"));
-    }
-
-    #[test]
-    fn provision_host_resolution_requires_discovery_for_unresolved_vm_hosts() {
-        let desired = DesiredState {
-            backend: BackendConfig::default(),
-            images: BTreeMap::new(),
-            resources: Vec::new(),
-            normalized_resources: BTreeMap::from([(
-                "media-stack".to_string(),
-                vmctl_domain::NormalizedResource {
-                    name: "media-stack".to_string(),
-                    kind: "vm".to_string(),
-                    vmid: None,
-                    provision: Some(ProvisionConfig {
-                        host: Some("definitely-not-resolvable.vmctl.invalid".to_string()),
-                        ..ProvisionConfig::default()
-                    }),
-                    ..vmctl_domain::NormalizedResource::default()
-                },
-            )]),
-            expansions: BTreeMap::new(),
-        };
-
-        let err = ensure_provision_hosts_resolve(&desired).unwrap_err();
-
-        assert!(err.to_string().contains("does not resolve"));
-        assert!(err.to_string().contains("no vmid"));
     }
 
     #[test]

@@ -49,9 +49,9 @@ fi
 install -d -o "$KODI_USER" -g "$KODI_USER" "$KODI_HOME/.kodi/userdata"
 install -d /media
 
-if ! grep -qE '^media-stack\.lan:/media /media nfs4 ' /etc/fstab; then
+if ! grep -qE '^media-stack:/media /media nfs4 ' /etc/fstab; then
   cat >> /etc/fstab <<'EOF'
-media-stack.lan:/media /media nfs4 ro,vers=4,proto=tcp,_netdev,nofail,x-systemd.automount 0 0
+media-stack:/media /media nfs4 ro,vers=4,proto=tcp,_netdev,nofail,x-systemd.automount 0 0
 EOF
 fi
 
@@ -63,7 +63,7 @@ for _ in {1..60}; do
 done
 
 if ! mountpoint -q /media; then
-  echo "Kodi media mount failed: /media from media-stack.lan"
+  echo "Kodi media mount failed: /media from media-stack"
   exit 1
 fi
 
