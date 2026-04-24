@@ -2051,10 +2051,13 @@ mod tests {
         assert!(script.contains("MEDIA_PUBLIC_BASE_URL_LAN"));
         assert!(script.contains("VMCTL_HTTP_BASE_URL_SHORT"));
         assert!(script.contains("VMCTL_HTTP_BASE_URL_FQDN"));
+        assert!(script.contains("VMCTL_HTTP_BASE_URL_IP"));
         assert!(script.contains("host_server_name = (os.environ.get(\"VMCTL_RESOURCE_NAME\")"));
         assert!(script.contains("jellyfin_public_base = f\"{addon_base.rstrip('/')}/jf\""));
         assert!(script.contains("\"PublicBaseUrl\": jellyfin_public_base"));
         assert!(script.contains("set_env_value(env_file, \"JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT\", lan_short_manifest)"));
+        assert!(script.contains("set_env_value(env_file, \"JELLIO_STREMIO_MANIFEST_URL_LAN_IP\", lan_ip_manifest)"));
+        assert!(script.contains("(ui_index / \"jellio-manifest.lan-ip.url\").write_text"));
         assert!(script.contains("(ui_index / \"jellio-manifest.lan-short.url\").write_text"));
         assert!(
             script.contains("return f\"{addon_base.rstrip('/')}/jellio/{encoded}/manifest.json\"")
@@ -2073,6 +2076,7 @@ mod tests {
         assert!(env.contains("VMCTL_HOST_FQDN=media-stack.home.arpa"));
         assert!(env.contains("VMCTL_HTTP_BASE_URL_SHORT=http://media-stack"));
         assert!(env.contains("VMCTL_HTTP_BASE_URL_FQDN=http://media-stack.home.arpa"));
+        assert!(env.contains("VMCTL_HTTP_BASE_URL_IP="));
         assert!(env.contains("MEDIA_PUBLIC_BASE_URL_LAN=http://media-stack"));
         assert!(env.contains("JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT="));
     }
@@ -2115,6 +2119,7 @@ mod tests {
         assert!(index.contains("data-service-path=\"/\""));
         assert!(index.contains("link.href = \"http://\" + host + \":\" + port + path;"));
         assert!(index.contains("wire(\"jellio-manifest-lan-link\", \"/jellio-manifest.lan.url\");"));
+        assert!(index.contains("wire(\"jellio-manifest-lan-ip-link\", \"/jellio-manifest.lan-ip.url\");"));
         assert!(index.contains("wire(\"jellio-manifest-lan-short-link\", \"/jellio-manifest.lan-short.url\");"));
         assert!(index
             .contains("wire(\"jellio-manifest-tailnet-link\", \"/jellio-manifest.tailnet.url\");"));

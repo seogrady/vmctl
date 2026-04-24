@@ -158,7 +158,7 @@ if "jellysearch" in (os.environ.get("MEDIA_SERVICES", "")):
         if response.status != 200:
             raise RuntimeError("jellysearch integration check failed")
 
-for key in ("JELLIO_STREMIO_MANIFEST_URL_LAN", "JELLIO_STREMIO_MANIFEST_URL_TAILNET"):
+for key in ("JELLIO_STREMIO_MANIFEST_URL_LAN", "JELLIO_STREMIO_MANIFEST_URL_LAN_IP", "JELLIO_STREMIO_MANIFEST_URL_TAILNET"):
     value = (os.environ.get(key) or "").strip()
     if not value:
         continue

@@ -105,6 +105,7 @@ preserve = {
     "JELLYFIN_STREMIO_PASSWORD",
     "JELLYFIN_STREMIO_AUTH_TOKEN",
     "JELLIO_STREMIO_MANIFEST_URL_LAN",
+    "JELLIO_STREMIO_MANIFEST_URL_LAN_IP",
     "JELLIO_STREMIO_MANIFEST_URL_LAN_SHORT",
     "JELLIO_STREMIO_MANIFEST_URL_TAILNET",
     "JELLIO_STREMIO_MANIFEST_URL_CLOUDFLARE",
@@ -264,6 +265,12 @@ sync_template_env_defaults() {
 }
 
 sync_template_env_defaults "$RESOURCE_DIR/media.env"
+
+primary_ip="$(detect_primary_ipv4 || true)"
+if [[ -n "$primary_ip" ]]; then
+  set_env_value "$STACK_DIR/.env" "VMCTL_PRIMARY_IPV4" "$primary_ip"
+  set_env_value "$STACK_DIR/.env" "VMCTL_HTTP_BASE_URL_IP" "http://${primary_ip}"
+fi
 
 if service_enabled "jellyfin"; then
   current_jellyfin_internal_url="$(grep -E '^JELLYFIN_INTERNAL_URL=' "$STACK_DIR/.env" | tail -n1 | cut -d= -f2- || true)"

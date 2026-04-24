@@ -28,6 +28,10 @@
       <p>Primary LAN manifest. Uses the `home.arpa` FQDN for devices that do not resolve short hostnames reliably.</p>
     </li>
     <li>
+      <a id="jellio-manifest-lan-ip-link" href="#">Stremio Manifest (LAN IP)</a>
+      <p>LAN manifest that uses the server IP address. Use this for clients that cannot resolve `media-stack` or `media-stack.home.arpa` via DNS. This assumes the server has a stable IP (DHCP reservation or static IP).</p>
+    </li>
+    <li>
       <a id="jellio-manifest-lan-short-link" href="#">Stremio Manifest (LAN Short Host)</a>
       <p>Legacy LAN manifest using `http://media-stack`. Keep this for clients that already resolve the short host correctly.</p>
     </li>
@@ -69,6 +73,7 @@
           .catch(function () {});
       }
       wire("jellio-manifest-lan-link", "/jellio-manifest.lan.url");
+      wire("jellio-manifest-lan-ip-link", "/jellio-manifest.lan-ip.url");
       wire("jellio-manifest-lan-short-link", "/jellio-manifest.lan-short.url");
       wire("jellio-manifest-tailnet-link", "/jellio-manifest.tailnet.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
