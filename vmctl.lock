@@ -148,7 +148,7 @@ digest = "sha256:bc042b6e7f1002a9c25b5aa40c0731d23f54a1bc84172e1a470daab4c59b7de
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellio.sh"
-digest = "sha256:1457d06b7db81884f7bdcb0ffc9a76751af8bf7a7090c6a3fab7a2ceca8bac10"
+digest = "sha256:5d44f56a9a029c7c3e95108be7791f8ec9d33b68c727ad8e706f19a66fa25a46"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-jellyfin-plugins.sh"
@@ -216,7 +216,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:04ab00d359c8eac2533a9157fdc779bb6d18d6c82e8cc9ccf19f84cdf8297743"
+digest = "sha256:9d7fd346b01fa0fb700334b9448c31a7396cff7ab51f04a6ec4abd0296e83ada"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -224,7 +224,7 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:837b2b267870561304ecd2088a64469df079e57e27c0d3e0f6b74fa1606b8077"
+digest = "sha256:e796030c735b2aa3f029c8e72810c7bc738fe1018fb98c69aa32e7404c6f5826"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
