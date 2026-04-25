@@ -101,8 +101,32 @@ def call(method, path, payload=None, token=None, allow=(200, 204)):
         raise
 
 
-def ensure_library(name, path, collection_type, token):
+def _item_locations(item):
+    locations = []
+    for location in item.get("Locations") or []:
+        location = str(location).strip().rstrip("/")
+        if location:
+            locations.append(location)
+    path = str(item.get("Path") or "").strip().rstrip("/")
+    if path:
+        locations.append(path)
+    for path_info in (item.get("LibraryOptions") or {}).get("PathInfos") or []:
+        location = str(path_info.get("Path") or "").strip().rstrip("/")
+        if location:
+            locations.append(location)
+    seen = set()
+    ordered = []
+    for location in locations:
+        if location not in seen:
+            seen.add(location)
+            ordered.append(location)
+    return ordered
+
+
+def ensure_library(name, path, collection_type, token, admin_user_id):
     current = call("GET", "/Library/VirtualFolders", token=token, allow=(200, 204)) or []
+    views = call("GET", f"/Users/{admin_user_id}/Views", token=token, allow=(200, 204)) or {}
+    view_items = views.get("Items") or []
     desired_path = path.rstrip("/")
     canonical = None
     canonical_locations = []
@@ -116,6 +140,15 @@ def ensure_library(name, path, collection_type, token):
             continue
         if desired_path in locations:
             duplicates.append(item_name)
+
+    if canonical is None:
+        for item in view_items:
+            item_name = (item.get("Name") or "").strip()
+            locations = _item_locations(item)
+            if desired_path in locations or item_name.lower() == name.lower():
+                canonical = item
+                canonical_locations = locations
+                break
 
     for duplicate in duplicates:
         call(
@@ -145,6 +178,15 @@ def ensure_library(name, path, collection_type, token):
         if duplicates:
             call("POST", "/Library/Refresh", token=token, allow=(200, 204, 400))
         return
+
+    if canonical is None:
+        # Avoid creating a new suffixed library if Jellyfin still has a stale
+        # view item for the desired path. Treat that existing view as canonical
+        # and let the refresh converge the underlying metadata instead of
+        # generating Movies2/TV2-style duplicates.
+        if any(desired_path in _item_locations(item) for item in view_items):
+            call("POST", "/Library/Refresh", token=token, allow=(200, 204, 400))
+            return
 
     locations = canonical_locations
     if locations == [desired_path]:
@@ -262,6 +304,7 @@ token = auth.get("AccessToken") if auth else None
 if token:
     info = try_call("GET", "/System/Info/Public", token=token) or {}
     server_id = (info.get("Id") or "").strip()
+    admin_user_id = ensure_user(user, token)
     network = try_call("GET", "/System/Configuration/network", token=token) or {}
     if not network.get("EnablePublishedServerUriByRequest"):
         network["EnablePublishedServerUriByRequest"] = True
@@ -285,7 +328,7 @@ if token:
         ("TV", "/data/media/tv", "tvshows"),
     ]:
         os.makedirs(path, exist_ok=True)
-        ensure_library(name, path, collection_type, token)
+        ensure_library(name, path, collection_type, token, admin_user_id)
     call("POST", "/Library/Refresh", token=token, allow=(200, 204, 400))
     set_env_value(env_file, "JELLYFIN_AUTOLOGIN_USER", auto_login_user)
     set_env_value(env_file, "JELLYFIN_AUTO_AUTH_TOKEN", auto_token)

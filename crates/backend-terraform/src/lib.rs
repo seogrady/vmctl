@@ -1847,7 +1847,7 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyfin.sh"
         );
-        assert!(script.contains("ensure_library(name, path, collection_type, token)"));
+        assert!(script.contains("ensure_library(name, path, collection_type, token, admin_user_id)"));
         assert!(script.contains("desired_path = path.rstrip(\"/\")"));
         assert!(script.contains("/Library/VirtualFolders/Paths?name="));
         assert!(script.contains("DELETE"));
@@ -1857,6 +1857,8 @@ mod tests {
         assert!(script.contains("\"name\": name"));
         assert!(script.contains("\"collectionType\": collection_type"));
         assert!(script.contains("\"PathInfos\": [{\"Path\": path}]"));
+        assert!(script.contains("/Users/{admin_user_id}/Views"));
+        assert!(script.contains("Avoid creating a new suffixed library"));
     }
 
     #[test]
