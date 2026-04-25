@@ -391,7 +391,27 @@ fi
 
 if service_enabled "sabnzbd"; then
   check_container_running "sabnzbd"
-  check_http_ok "http://127.0.0.1:8085/api?mode=version" "sabnzbd version"
+  api_key="$(python3 <<'PY'
+import configparser
+import os
+from pathlib import Path
+
+config_root = Path(os.environ.get("CONFIG_PATH") or "/opt/media/config")
+config_path = config_root / "sabnzbd" / "sabnzbd.ini"
+if not config_path.exists():
+    raise SystemExit(f"validation failed: missing sabnzbd config at {config_path}")
+
+parser = configparser.ConfigParser()
+parser.read_string("[root]\n" + config_path.read_text(encoding="utf-8"))
+api_key = ""
+if parser.has_section("misc"):
+    api_key = (parser.get("misc", "api_key", fallback="") or "").strip()
+if not api_key:
+    raise SystemExit("validation failed: SABnzbd API key is empty")
+print(api_key)
+PY
+)"
+  check_http_ok "http://127.0.0.1:8085/api?mode=version&apikey=${api_key}" "sabnzbd version"
 
 python3 <<'PY'
 import configparser
@@ -407,13 +427,18 @@ config_path = config_root / "sabnzbd" / "sabnzbd.ini"
 if not config_path.exists():
     raise SystemExit(f"validation failed: missing sabnzbd config at {config_path}")
 
+config_text = config_path.read_text(encoding="utf-8")
+
 parser = configparser.ConfigParser()
-parser.read_string("[root]\n" + config_path.read_text(encoding="utf-8"))
+parser.read_string("[root]\n" + config_text)
 api_key = ""
 if parser.has_section("misc"):
     api_key = (parser.get("misc", "api_key", fallback="") or "").strip()
 if not api_key:
     raise SystemExit("validation failed: SABnzbd API key is empty")
+server_host = (os.environ.get("SABNZBD_SERVER_HOST") or "").strip() or "127.0.0.1"
+if f"[[{server_host}]]" not in config_text:
+    raise SystemExit(f"validation failed: SABnzbd server subsection missing [[{server_host}]]")
 host_whitelist = ""
 if parser.has_section("misc"):
     host_whitelist = (parser.get("misc", "host_whitelist", fallback="") or "").strip()
@@ -432,6 +457,23 @@ for required in ("100.64.0.0/10", "172.18.0.0/16", "192.168.0.0/16"):
         raise SystemExit(
             f"validation failed: SABnzbd local_ranges missing {required}: {local_ranges!r}"
         )
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+opener = urllib.request.build_opener(NoRedirect())
+request = urllib.request.Request("http://127.0.0.1:8085/", method="GET")
+try:
+    with opener.open(request, timeout=20) as response:
+        final_url = response.geturl()
+        if "/wizard" in final_url:
+            raise SystemExit(f"validation failed: sabnzbd still redirects to wizard: {final_url}")
+except urllib.error.HTTPError as err:
+    location = err.headers.get("Location", "")
+    if err.code in (301, 302, 303, 307, 308) and "/wizard" in location:
+        raise SystemExit(f"validation failed: sabnzbd still redirects to wizard: {location}")
+    raise
 
 req = urllib.request.Request(
     f"http://127.0.0.1:8085/api?mode=get_cats&apikey={api_key}",

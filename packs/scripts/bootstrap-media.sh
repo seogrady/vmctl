@@ -298,6 +298,157 @@ recover_jellystat_db() {
   fi
 }
 
+configure_sabnzbd() {
+  if ! service_enabled "sabnzbd"; then
+    return 0
+  fi
+
+  python3 <<'PY'
+import configparser
+import os
+import secrets
+from pathlib import Path
+
+config_root = Path(os.environ.get("CONFIG_PATH") or "/opt/media/config")
+env_file = Path(os.environ.get("ENV_FILE") or "/opt/media/.env")
+ini_path = config_root / "sabnzbd" / "sabnzbd.ini"
+ini_path.parent.mkdir(parents=True, exist_ok=True)
+
+download_root = "/data/usenet/incomplete"
+complete_root = "/data/usenet/complete"
+tv_root = f"{complete_root}/tv"
+movies_root = f"{complete_root}/movies"
+
+
+def env(name: str, default: str = "") -> str:
+    return (os.environ.get(name) or default).strip()
+
+
+def ini_escape(value: str) -> str:
+    return value.replace("\n", " ").replace("\r", " ").strip()
+
+
+def read_existing_api_key(path: Path) -> str:
+    if not path.exists():
+        return ""
+    parser = configparser.ConfigParser()
+    parser.read_string("[root]\n" + path.read_text(encoding="utf-8"))
+    for section in ("misc", "server"):
+        if parser.has_section(section):
+            for key in ("api_key", "apikey"):
+                value = (parser.get(section, key, fallback="") or "").strip()
+                if value:
+                    return value
+    return ""
+
+
+def set_env_value(key: str, value: str) -> None:
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    updated = []
+    seen = False
+    for line in lines:
+        if line.startswith(f"{key}="):
+            updated.append(f"{key}={value}")
+            seen = True
+        else:
+            updated.append(line)
+    if not seen:
+        updated.append(f"{key}={value}")
+    env_file.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
+
+
+api_key = env("SABNZBD_API_KEY") or read_existing_api_key(ini_path) or secrets.token_hex(24)
+web_username = env("SABNZBD_USERNAME")
+web_password = env("SABNZBD_PASSWORD")
+
+server_host = env("SABNZBD_SERVER_HOST")
+server_port = int(env("SABNZBD_SERVER_PORT", "563"))
+server_username = env("SABNZBD_SERVER_USERNAME")
+server_password = env("SABNZBD_SERVER_PASSWORD")
+server_connections = int(env("SABNZBD_SERVER_CONNECTIONS", "10"))
+server_timeout = int(env("SABNZBD_SERVER_TIMEOUT", "120"))
+server_retention = int(env("SABNZBD_SERVER_RETENTION", "0"))
+server_ssl = env("SABNZBD_SERVER_SSL", "true").lower() not in {"0", "false", "no", "off"}
+server_enable_env = env("SABNZBD_SERVER_ENABLE", "true")
+server_enabled = server_enable_env.lower() not in {"0", "false", "no", "off"}
+if not server_host:
+    server_host = "127.0.0.1"
+server_name = env("SABNZBD_SERVER_NAME") or server_host
+server_display_name = env("SABNZBD_SERVER_DISPLAY_NAME") or server_name
+
+text = "\n".join(
+    [
+        "__version__ = 19",
+        "__encoding__ = utf-8",
+        "",
+        "[misc]",
+        "host = 0.0.0.0",
+        "port = 8080",
+        f"username = {ini_escape(web_username)}",
+        f"password = {ini_escape(web_password)}",
+        f"api_key = {api_key}",
+        f"download_dir = {download_root}",
+        f"complete_dir = {complete_root}",
+        f"dirscan_dir = {download_root}",
+        "host_whitelist = sabnzbd,media-stack,localhost,127.0.0.1",
+        "local_ranges = 100.64.0.0/10,172.18.0.0/16,192.168.0.0/16",
+        "auto_browser = 0",
+        "enable_https = 0",
+        "disable_api_key = 0",
+        "folder_rename = 1",
+        "enable_movie_sorting = 1",
+        "enable_tv_sorting = 1",
+        "movie_categories = movies,",
+        "tv_categories = tv,",
+        "movie_sort_string = %title (%y).%ext",
+        "tv_sort_string = %sn/Season %s/%sn - %sx%0e - %en.%ext",
+        "",
+        "[servers]",
+        f"[[{server_name}]]",
+        f"displayname = {ini_escape(server_display_name)}",
+        f"host = {server_host}",
+        f"port = {server_port}",
+        f"timeout = {server_timeout}",
+        f"username = {ini_escape(server_username)}",
+        f"password = {ini_escape(server_password)}",
+        f"connections = {server_connections}",
+        f"ssl = {1 if server_ssl else 0}",
+        "ssl_verify = 3",
+        "ssl_ciphers = ",
+        f"enable = {1 if server_enabled else 0}",
+        "required = 0",
+        "optional = 0",
+        "pipelining_requests = 10",
+        f"retention = {server_retention}",
+        "priority = 0",
+        "notes = ",
+        "",
+        "[categories]",
+        "[[movies]]",
+        "name = movies",
+        "order = 1",
+        "pp = 3",
+        "script = Default",
+        "priority = -100",
+        f"dir = {movies_root}",
+        "[[tv]]",
+        "name = tv",
+        "order = 2",
+        "pp = 3",
+        "script = Default",
+        "priority = -100",
+        f"dir = {tv_root}",
+        "",
+    ]
+)
+
+ini_path.write_text(text, encoding="utf-8")
+set_env_value("SABNZBD_API_KEY", api_key)
+set_env_value("SABNZBD_URL", env("SABNZBD_URL", "http://localhost:8085"))
+set_env_value("SABNZBD_INTERNAL_URL", env("SABNZBD_INTERNAL_URL", "http://sabnzbd:8080"))
+PY
+}
+
 if grep -q '^MEDIA_VPN_CONFIGURED=true$' "$STACK_DIR/.env" && grep -q '^MEDIA_VPN_ENABLED=false$' "$STACK_DIR/.env"; then
   echo "media VPN is configured but incomplete; refusing to start qBittorrent without VPN"
   exit 1
@@ -358,6 +509,8 @@ if service_enabled "jellystat-db"; then
   chown -R 70:70 "$STACK_DIR/config/jellystat-db"
 fi
 chown -R 1000:1000 "$STORAGE_PATH"
+
+configure_sabnzbd
 
 docker_compose pull
 docker_compose up -d --remove-orphans

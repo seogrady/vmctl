@@ -16,6 +16,8 @@ docker_compose() {
   docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+docker_compose up -d sabnzbd
+
 python3 <<'PY'
 import configparser
 import json
@@ -148,6 +150,4 @@ set_env_value("SABNZBD_API_KEY", api_key)
 set_env_value("SABNZBD_URL", os.environ.get("SABNZBD_URL", "http://localhost:8085"))
 set_env_value("SABNZBD_INTERNAL_URL", internal_url)
 PY
-
-docker_compose up -d sabnzbd
 docker_compose restart sabnzbd

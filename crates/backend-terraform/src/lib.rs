@@ -1970,6 +1970,9 @@ mod tests {
         assert!(script.contains("\"JELLIO_STREMIO_MANIFEST_URL_TAILSCALE\""));
         assert!(script.contains("\"CLOUDFLARED_TOKEN\""));
         assert!(script.contains("\"SABNZBD_API_KEY\""));
+        assert!(script.contains("configure_sabnzbd()"));
+        assert!(script.contains("SABNZBD_SERVER_HOST"));
+        assert!(script.contains("SABNZBD_SERVER_ENABLE"));
         assert!(script.contains("ensure_env_value \"$STACK_DIR/.env\" \"SEERR_API_KEY\""));
         assert!(script.contains("html.unescape(value)"));
         assert!(script.contains("ipv4 = [part for part in parts if \":\" not in part]"));
@@ -2109,6 +2112,8 @@ mod tests {
         assert!(script.contains("SABnzbd download client"));
         assert!(script.contains("host_whitelist missing {required}"));
         assert!(script.contains("local_ranges ="));
+        assert!(script.contains("SABnzbd server subsection missing"));
+        assert!(script.contains("still redirects to wizard"));
         assert!(script.contains("100.64.0.0/10"));
         assert!(script.contains("172.18.0.0/16"));
         assert!(script.contains("192.168.0.0/16"));

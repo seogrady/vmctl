@@ -136,7 +136,7 @@ digest = "sha256:303aacf807a2a97a74c721d3c972206063833a2aed91d3f19acaaf362b57d64
 
 [[artifacts]]
 path = "resources/media-stack/media.env"
-digest = "sha256:231ddef1460a9958ed072141502d557b86d9392dcb688d30a7b530ee13c1d13a"
+digest = "sha256:59bafa1ebd43b9e122e0eabfb36edc19921ecee23c1955194bd197210a2c44eb"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-arr.sh"
@@ -168,7 +168,7 @@ digest = "sha256:ec99d40387633f3e27caed36dc3ae4ee0d75e29f6199f0cc3a82e022fb3e8ca
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-media.sh"
-digest = "sha256:c4ffe2ca475c17ae2b738e129ea969bce56d42ace7b5adf8613bac5c822648c4"
+digest = "sha256:aa2898516e88b17bce3a9fc070c8a96c4c2562957623dd8999955efb4547a215"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-node.sh"
@@ -184,7 +184,7 @@ digest = "sha256:f32b649ede287155c1b31e49102d2686e0d29a55e0fd7c071347bac62faf62d
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-sabnzbd.sh"
-digest = "sha256:99d8c3b736943378aae78bb435d6f60fdb08b99e97ee30fc5ca53e54b2e03a7a"
+digest = "sha256:13ec7d3dff39d1b17673d3a9901365b566a471036120eb771bdde6e4fda73527"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-seerr.sh"
@@ -204,7 +204,7 @@ digest = "sha256:e1a2f6322ceb9d59c124ab621af248e5d53a5530cfd261448abcaea124c94b2
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
-digest = "sha256:4c6abbf4c14dd3af7c1b88ba07ac26e248d0cbde2fc5ef35557b28a04b15a2e1"
+digest = "sha256:9520592eae6ef04d04c7093e4f747b15fc1b41694b55177fa31bf3cdcf7ac6ec"
 
 [[artifacts]]
 path = "resources/media-stack/tailscale-setup.sh"
@@ -224,7 +224,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:22a892b8fef3e198483a62231ea5a81408bdd3fc33b6b2b7a56e13767867667f"
+digest = "sha256:cbee5c382543dce82b6d6dff6b5f46fc5ebccbe1bac44a11ab82712887ec6430"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -232,7 +232,7 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:8649ac9404dc811cbefedefe42599a797f614786f628170c0eb75ce8aa515b26"
+digest = "sha256:cc375bcdf26992a6a2d4ee6a9e9912d3a990f6b652bdc5ee6c40b6990829a553"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
