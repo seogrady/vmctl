@@ -22,7 +22,7 @@ service_enabled() {
   esac
 }
 
-if ! service_enabled "qbittorrent-vpn"; then
+if ! service_enabled "qbittorrent-vpn" && ! service_enabled "sabnzbd"; then
   exit 0
 fi
 
@@ -45,12 +45,21 @@ from pathlib import Path
 STACK_DIR = Path("/opt/media")
 ENV_FILE = STACK_DIR / ".env"
 CONFIG_ROOT = Path(os.environ.get("CONFIG_PATH") or "/opt/media/config")
-DOWNLOAD_ROOT = Path(os.environ.get("QBITTORRENT_DOWNLOADS") or "/data/torrents")
+UI_INDEX_ROOT = CONFIG_ROOT / "caddy" / "ui-index"
+TORRENT_DOWNLOAD_ROOT = Path(os.environ.get("QBITTORRENT_DOWNLOADS") or "/data/torrents")
+USENET_COMPLETE_ROOT = Path(os.environ.get("SABNZBD_COMPLETE") or "/data/usenet/complete")
 STATE_FILE = Path("/var/lib/vmctl/download-unpack/processed.json")
+RECOVERY_STATE_FILE = Path("/var/lib/vmctl/download-unpack/recovery.json")
+COMPATIBILITY_FILE = Path("/var/lib/vmctl/download-unpack/compatibility.json")
+COMPATIBILITY_SUMMARY_JSON = Path("/var/lib/vmctl/download-unpack/compatibility-summary.json")
+COMPATIBILITY_SUMMARY_TXT = Path("/var/lib/vmctl/download-unpack/compatibility-summary.txt")
 VIDEO_SUFFIXES = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".webm", ".iso"}
 ARCHIVE_SUFFIXES = {".rar", ".r00", ".r01", ".r02", ".zip", ".7z"}
 RADARR_CATEGORIES = {"radarr", "movies"}
 SONARR_CATEGORIES = {"sonarr", "tv", "tv-sonarr"}
+STREMIO_VIDEO_CODECS = {"h264", "hevc", "av1", "vp9"}
+STREMIO_AUDIO_CODECS = {"aac", "ac3", "eac3", "mp3", "opus", "vorbis", "flac"}
+STREMIO_SUBTITLE_CODECS = {"subrip", "srt", "ass", "ssa", "webvtt"}
 
 
 def read_env() -> dict[str, str]:
@@ -137,6 +146,17 @@ def qbit_get(path: str, cookie: str):
         return json.loads(response.read().decode("utf-8"))
 
 
+def arr_get(app: str, path: str):
+    api_key = read_api_key(app)
+    if app == "radarr":
+        base_url = "http://127.0.0.1:7878"
+    elif app == "sonarr":
+        base_url = "http://127.0.0.1:8989"
+    else:
+        raise RuntimeError(f"unsupported app {app}")
+    return request_json("GET", f"{base_url}{path}", headers={"X-Api-Key": api_key})
+
+
 def arr_scan(app: str, folder: str, download_client_id: str):
     api_key = read_api_key(app)
     if app == "radarr":
@@ -182,6 +202,100 @@ def jellyfin_refresh():
     )
 
 
+def ffprobe(path: Path):
+    try:
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_format",
+                "-show_streams",
+                "-print_format",
+                "json",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.CalledProcessError:
+        return None
+    try:
+        return json.loads(completed.stdout or "{}")
+    except Exception:
+        return None
+
+
+def compatibility_report(path: Path):
+    report = {
+        "path": str(path),
+        "compatible": False,
+        "reason": "no media file found",
+        "container": "",
+        "videoCodecs": [],
+        "audioCodecs": [],
+        "subtitleCodecs": [],
+    }
+    media_files = sorted(
+        [child for child in path.rglob("*") if child.is_file() and child.suffix.lower() in VIDEO_SUFFIXES],
+        key=lambda item: item.name.lower(),
+    )
+    if not media_files:
+        return report
+
+    probe = ffprobe(media_files[0])
+    if not probe:
+        report["reason"] = "ffprobe unavailable or file could not be probed"
+        return report
+
+    streams = probe.get("streams") or []
+    format_info = probe.get("format") or {}
+    container = (format_info.get("format_name") or media_files[0].suffix.lstrip(".")).lower()
+    report["container"] = container
+
+    video_codecs = [str(stream.get("codec_name") or "").lower() for stream in streams if stream.get("codec_type") == "video"]
+    audio_codecs = [str(stream.get("codec_name") or "").lower() for stream in streams if stream.get("codec_type") == "audio"]
+    subtitle_codecs = [str(stream.get("codec_name") or "").lower() for stream in streams if stream.get("codec_type") == "subtitle"]
+    report["videoCodecs"] = sorted({codec for codec in video_codecs if codec})
+    report["audioCodecs"] = sorted({codec for codec in audio_codecs if codec})
+    report["subtitleCodecs"] = sorted({codec for codec in subtitle_codecs if codec})
+
+    if not video_codecs:
+        report["reason"] = "no video stream found"
+        return report
+    if any(codec not in STREMIO_VIDEO_CODECS for codec in video_codecs if codec):
+        report["reason"] = "unsupported video codec"
+        return report
+    if any(codec and codec not in STREMIO_AUDIO_CODECS for codec in audio_codecs):
+        report["reason"] = "unsupported audio codec"
+        return report
+    if any(codec and codec not in STREMIO_SUBTITLE_CODECS for codec in subtitle_codecs):
+        report["reason"] = "unsupported subtitle codec"
+        return report
+    if not any(token in container for token in ("mp4", "mkv", "webm", "mov", "matroska")):
+        report["reason"] = "unsupported container"
+        return report
+
+    report["compatible"] = True
+    report["reason"] = ""
+    return report
+    token = auth.get("AccessToken")
+    if not token:
+        return
+    request_json(
+        "POST",
+        f"{JELLYFIN_URL}/Library/Refresh",
+        headers={
+            "X-Emby-Token": token,
+            "Authorization": 'MediaBrowser Client="vmctl", Device="unpack", DeviceId="vmctl-unpack", Version="1.0"',
+        },
+        allow=(200, 204, 400),
+    )
+
+
 def load_state():
     if not STATE_FILE.exists():
         return {}
@@ -194,6 +308,76 @@ def load_state():
 def save_state(state):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def load_json_file(path: Path):
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_json_file(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def mirror_ui_file(name: str, content: str) -> None:
+    UI_INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+    (UI_INDEX_ROOT / name).write_text(content, encoding="utf-8")
+
+
+def rebuild_compatibility_summary() -> None:
+    reports = load_json_file(COMPATIBILITY_FILE)
+    incompatible = []
+    for item_id, report in sorted(reports.items(), key=lambda item: item[0]):
+        if not isinstance(report, dict):
+            continue
+        if report.get("compatible", False):
+            continue
+        incompatible.append(
+            {
+                "id": item_id,
+                "path": report.get("path") or "",
+                "container": report.get("container") or "",
+                "videoCodecs": report.get("videoCodecs") or [],
+                "audioCodecs": report.get("audioCodecs") or [],
+                "subtitleCodecs": report.get("subtitleCodecs") or [],
+                "reason": report.get("reason") or "unknown",
+            }
+        )
+
+    payload = {
+        "updatedAt": int(time.time()),
+        "incompatibleCount": len(incompatible),
+        "items": incompatible,
+    }
+    save_json_file(COMPATIBILITY_SUMMARY_JSON, payload)
+
+    lines = [
+        f"incompatible_count={len(incompatible)}",
+        f"updated_at={payload['updatedAt']}",
+    ]
+    for item in incompatible:
+        lines.append(
+            " | ".join(
+                [
+                    str(item["id"]),
+                    f"path={item['path'] or 'unknown'}",
+                    f"container={item['container'] or 'unknown'}",
+                    f"video={','.join(item['videoCodecs']) or '-'}",
+                    f"audio={','.join(item['audioCodecs']) or '-'}",
+                    f"subtitles={','.join(item['subtitleCodecs']) or '-'}",
+                    f"reason={item['reason']}",
+                ]
+            )
+        )
+    COMPATIBILITY_SUMMARY_TXT.parent.mkdir(parents=True, exist_ok=True)
+    COMPATIBILITY_SUMMARY_TXT.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    mirror_ui_file("compatibility-summary.txt", COMPATIBILITY_SUMMARY_TXT.read_text(encoding="utf-8"))
+    mirror_ui_file("compatibility-summary.json", COMPATIBILITY_SUMMARY_JSON.read_text(encoding="utf-8"))
 
 
 def has_media_file(path: Path) -> bool:
@@ -222,10 +406,13 @@ def extract_archive(path: Path) -> bool:
     return True
 
 
-def process():
+def item_id_for_path(path: Path, prefix: str) -> str:
+    return f"{prefix}:{path.as_posix()}"
+
+
+def process_torrent_downloads(state):
     cookie = qbit_login()
     torrents = qbit_get("/api/v2/torrents/info", cookie)
-    state = load_state()
     changed = False
 
     for torrent in torrents:
@@ -251,6 +438,10 @@ def process():
             continue
 
         extract_archive(content_path)
+        report = compatibility_report(content_path)
+        reports = load_json_file(COMPATIBILITY_FILE)
+        reports[torrent_id] = report
+        save_json_file(COMPATIBILITY_FILE, reports)
         if not has_media_file(content_path):
             continue
 
@@ -265,10 +456,125 @@ def process():
 
     if changed:
         save_state(state)
+    return changed
+
+
+def process_usenet_downloads(state):
+    changed = False
+    if not USENET_COMPLETE_ROOT.exists():
+        return changed
+
+    for category_root in [USENET_COMPLETE_ROOT / "movies", USENET_COMPLETE_ROOT / "tv"]:
+        if not category_root.exists():
+            continue
+        app = "radarr" if category_root.name == "movies" else "sonarr"
+        entries = sorted(
+            [child for child in category_root.iterdir() if child.is_dir() or child.is_file()],
+            key=lambda item: item.name.lower(),
+        )
+        for item_path in entries:
+            if not item_path.exists():
+                continue
+            content_path = item_path if item_path.is_dir() else item_path.parent
+            item_key = item_id_for_path(content_path, "SAB")
+            if state.get(item_key, {}).get("imported"):
+                continue
+
+            extract_archive(content_path)
+            report = compatibility_report(content_path)
+            reports = load_json_file(COMPATIBILITY_FILE)
+            reports[item_key] = report
+            save_json_file(COMPATIBILITY_FILE, reports)
+            if not has_media_file(content_path):
+                continue
+
+            arr_scan(app, str(content_path), item_key)
+            state[item_key] = {
+                "app": app,
+                "path": str(content_path),
+                "imported": True,
+                "updatedAt": int(time.time()),
+            }
+            changed = True
+
+    return changed
+
+
+def trigger_recovery():
+    recovery_state = load_json_file(RECOVERY_STATE_FILE)
+    now = int(time.time())
+    last_run = int(recovery_state.get("lastRunAt") or 0)
+    if now - last_run < 3600:
+        return
+
+    recovered = recovery_state.get("recovered", {})
+    allowed_protocols = [item for item in (os.environ.get("VMCTL_DOWNLOAD_PROTOCOLS") or "").split(",") if item.strip()]
+    if not allowed_protocols:
+        return
+
+    for app, command, id_field in [
+        ("radarr", "MoviesSearch", "movieIds"),
+        ("sonarr", "SeriesSearch", "seriesIds"),
+    ]:
+        try:
+            items = arr_get(app, "/api/v3/movie" if app == "radarr" else "/api/v3/series")
+        except Exception:
+            continue
+        candidates = items or []
+
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            if not item.get("monitored", True):
+                continue
+            if app == "radarr" and item.get("hasFile") is True:
+                continue
+            if app == "sonarr":
+                stats = item.get("statistics") or {}
+                episode_count = int(stats.get("episodeCount") or 0)
+                file_count = int(stats.get("episodeFileCount") or 0)
+                if episode_count and file_count >= episode_count:
+                    continue
+            item_id = item.get("id")
+            if item_id is None:
+                continue
+            key = f"{app}:{item_id}"
+            last_triggered = int(recovered.get(key) or 0)
+            if now - last_triggered < 21600:
+                continue
+            payload = {"name": command, id_field: [item_id]}
+            try:
+                request_json(
+                    "POST",
+                    f"http://127.0.0.1:{7878 if app == 'radarr' else 8989}/api/v3/command",
+                    payload,
+                    headers={"X-Api-Key": read_api_key(app)},
+                    allow=(200, 201, 202, 204),
+                )
+                recovered[key] = now
+            except Exception:
+                continue
+
+    recovery_state["lastRunAt"] = now
+    recovery_state["recovered"] = recovered
+    save_json_file(RECOVERY_STATE_FILE, recovery_state)
+
+
+def process():
+    state = load_state()
+    changed = False
+    if service_enabled("qbittorrent-vpn"):
+        changed = process_torrent_downloads(state) or changed
+    if service_enabled("sabnzbd"):
+        changed = process_usenet_downloads(state) or changed
+    if changed:
+        save_state(state)
         try:
             jellyfin_refresh()
         except Exception as exc:
             print(f"warning: Jellyfin refresh skipped: {exc}")
+    trigger_recovery()
+    rebuild_compatibility_summary()
 
 
 wait_for("http://127.0.0.1:8080/api/v2/app/version", 240)

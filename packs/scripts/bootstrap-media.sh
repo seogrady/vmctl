@@ -372,11 +372,11 @@ server_connections = int(env("SABNZBD_SERVER_CONNECTIONS", "10"))
 server_timeout = int(env("SABNZBD_SERVER_TIMEOUT", "120"))
 server_retention = int(env("SABNZBD_SERVER_RETENTION", "0"))
 server_ssl = env("SABNZBD_SERVER_SSL", "true").lower() not in {"0", "false", "no", "off"}
-server_enable_env = env("SABNZBD_SERVER_ENABLE", "true")
+server_enable_env = env("SABNZBD_SERVER_ENABLE", "false")
 server_enabled = server_enable_env.lower() not in {"0", "false", "no", "off"}
 if not server_host:
-    server_host = "127.0.0.1"
-server_name = env("SABNZBD_SERVER_NAME") or server_host
+    server_enabled = False
+server_name = env("SABNZBD_SERVER_NAME") or server_host or "sabnzbd"
 server_display_name = env("SABNZBD_SERVER_DISPLAY_NAME") or server_name
 
 text = "\n".join(

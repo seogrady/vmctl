@@ -120,11 +120,52 @@ SONARR_ROOT_FOLDER = os.environ.get("SONARR_ROOT_FOLDER", "/data/media/tv")
 RADARR_ROOT_FOLDER = os.environ.get("RADARR_ROOT_FOLDER", "/data/media/movies")
 SONARR_PROWLARR_CATEGORIES = [int(item.strip()) for item in (os.environ.get("SONARR_PROWLARR_CATEGORIES", "5000,5030,5040").split(",")) if item.strip()]
 RADARR_PROWLARR_CATEGORIES = [int(item.strip()) for item in (os.environ.get("RADARR_PROWLARR_CATEGORIES", "2000,2010,2020,2030,2040,2045,2060").split(",")) if item.strip()]
+DOWNLOAD_ROUTING_PREFER = (os.environ.get("DOWNLOAD_ROUTING_PREFER") or "usenet").strip().lower() or "usenet"
+DOWNLOAD_ROUTING_FALLBACK = (os.environ.get("DOWNLOAD_ROUTING_FALLBACK") or "torrent").strip().lower() or "torrent"
+DOWNLOAD_ROUTING_REQUIRE_CLIENT = (os.environ.get("DOWNLOAD_ROUTING_REQUIRE_CLIENT") or "true").strip().lower() not in {"0", "false", "no", "off"}
+PROWLARR_INDEXERS_TORRENT = [
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT") or "").split(",")
+    if item.strip()
+]
+PROWLARR_INDEXERS_USENET = [
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_USENET") or "").split(",")
+    if item.strip()
+]
 
 
 def service_enabled(name: str) -> bool:
     services = {item.strip() for item in (os.environ.get("MEDIA_SERVICES", "") or "").split(",") if item.strip()}
     return name in services
+
+
+def truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def env_list(name: str) -> list[str]:
+    return [
+        item.strip()
+        for item in (os.environ.get(name) or "").split(",")
+        if item.strip()
+    ]
+
+
+def write_env_value(key: str, value: str) -> None:
+    path = Path(os.environ.get("ENV_FILE") or "/opt/media/.env")
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    updated = []
+    seen = False
+    for line in lines:
+        if line.startswith(f"{key}="):
+            updated.append(f"{key}={value}")
+            seen = True
+        else:
+            updated.append(line)
+    if not seen:
+        updated.append(f"{key}={value}")
+    path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
 
 
 def read_api_key(app):
@@ -247,28 +288,58 @@ def ensure_prowlarr_app_sync(prowlarr_url, prowlarr_key, arr_name, arr_url, arr_
     request("POST", f"{prowlarr_url}/api/v1/applications", prowlarr_key, payload, allow=(400, 409))
 
 
-def ensure_default_indexers(prowlarr_url, prowlarr_key):
-    configured_names = [
-        name.strip()
-        for name in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS") or "").split(",")
-        if name.strip()
-    ]
-    if not configured_names:
-        return
+def ensure_default_indexers(prowlarr_url, prowlarr_key, allowed_protocols):
+    managed_names = set(PROWLARR_INDEXERS_TORRENT + PROWLARR_INDEXERS_USENET)
+    allowed_names = set()
+    for protocol in allowed_protocols:
+        if protocol == "torrent":
+            allowed_names.update(PROWLARR_INDEXERS_TORRENT)
+        elif protocol == "usenet":
+            allowed_names.update(PROWLARR_INDEXERS_USENET)
+
     existing = request("GET", f"{prowlarr_url}/api/v1/indexer", prowlarr_key, allow=()) or []
     existing_names = {item.get("name") for item in existing if item.get("name")}
 
     schemas = request("GET", f"{prowlarr_url}/api/v1/indexer/schema", prowlarr_key, allow=()) or []
+    schema_names = {schema.get("name") for schema in schemas if schema.get("name")}
+    usable_torrent_names = [name for name in PROWLARR_INDEXERS_TORRENT if name in schema_names]
+    usable_usenet_names = [name for name in PROWLARR_INDEXERS_USENET if name in schema_names]
+    desired_usable_names = set()
+    if "torrent" in allowed_protocols:
+        desired_usable_names.update(usable_torrent_names)
+    if "usenet" in allowed_protocols:
+        desired_usable_names.update(usable_usenet_names)
+    if "torrent" in allowed_protocols and not usable_torrent_names:
+        raise RuntimeError("no schema-backed torrent indexers are available in Prowlarr")
+    if "usenet" in allowed_protocols and not usable_usenet_names:
+        raise RuntimeError("no schema-backed usenet indexers are available in Prowlarr")
     profiles = request("GET", f"{prowlarr_url}/api/v1/appProfile", prowlarr_key, allow=()) or []
     profile_id = profiles[0]["id"] if profiles else 1
 
+    for item in existing:
+        name = item.get("name")
+        if name not in managed_names:
+            continue
+        updated = dict(item)
+        should_enable = name in desired_usable_names
+        changed = False
+        if updated.get("enable") != should_enable:
+            updated["enable"] = should_enable
+            changed = True
+        if should_enable:
+            if updated.get("priority") != 25:
+                updated["priority"] = 25
+                changed = True
+            if updated.get("appProfileId") != profile_id:
+                updated["appProfileId"] = profile_id
+                changed = True
+        if changed:
+            request("PUT", f"{prowlarr_url}/api/v1/indexer/{item['id']}", prowlarr_key, updated)
+
     selected = [
         schema for schema in schemas
-        if schema.get("name") in configured_names and schema.get("name") not in existing_names
+        if schema.get("name") in desired_usable_names and schema.get("name") not in existing_names
     ]
-    if not selected:
-        return
-
     for schema in selected:
         candidate = dict(schema)
         candidate["enable"] = True
@@ -322,7 +393,15 @@ def ensure_root_folder(url, api_key, path):
     request("POST", f"{url}/api/v3/rootfolder", api_key, {"path": path})
 
 
-def ensure_qbittorrent_download_client(app, url, api_key, category):
+def remove_download_client(app, url, api_key, name):
+    existing = request("GET", f"{url}/api/v3/downloadclient", api_key, allow=()) or []
+    target = next((item for item in existing if item.get("name") == name), None)
+    if not target:
+        return
+    request("DELETE", f"{url}/api/v3/downloadclient/{target['id']}", api_key, allow=(200, 204, 404))
+
+
+def ensure_qbittorrent_download_client(app, url, api_key, category, priority):
     if app == "sonarr":
         category_field = "tvCategory"
         recent_priority_field = "recentTvPriority"
@@ -352,10 +431,10 @@ def ensure_qbittorrent_download_client(app, url, api_key, category):
         item = current_client()
         if item is not None:
             updated = dict(item)
-            updated["priority"] = 2
+            updated["priority"] = priority
             fields = updated.get("fields", [])
             current = {field.get("name"): field.get("value") for field in fields}
-            if item.get("priority") == 2 and all(
+            if item.get("priority") == priority and all(
                 current.get(name) == value for name, value in comparable_desired.items()
             ):
                 return
@@ -400,7 +479,7 @@ def ensure_qbittorrent_download_client(app, url, api_key, category):
         refreshed = current_client()
         if refreshed is not None:
             refreshed_fields = {field.get("name"): field.get("value") for field in refreshed.get("fields") or []}
-            if refreshed.get("priority") == 2 and all(
+            if refreshed.get("priority") == priority and all(
                 refreshed_fields.get(name) == value for name, value in comparable_desired.items()
             ):
                 return
@@ -409,7 +488,7 @@ def ensure_qbittorrent_download_client(app, url, api_key, category):
     raise RuntimeError(f"{app} qBittorrent download client did not converge")
 
 
-def ensure_sabnzbd_download_client(app, url, arr_api_key, sab_api_key, category):
+def ensure_sabnzbd_download_client(app, url, arr_api_key, sab_api_key, category, priority):
     if app == "sonarr":
         category_field = "tvCategory"
         recent_priority_field = "recentTvPriority"
@@ -439,10 +518,10 @@ def ensure_sabnzbd_download_client(app, url, arr_api_key, sab_api_key, category)
         item = current_client()
         if item is not None:
             updated = dict(item)
-            updated["priority"] = 1
+            updated["priority"] = priority
             fields = updated.get("fields", [])
             current = {field.get("name"): field.get("value") for field in fields}
-            if item.get("priority") == 1 and all(
+            if item.get("priority") == priority and all(
                 current.get(name) == value for name, value in comparable_desired.items()
             ):
                 return
@@ -486,13 +565,139 @@ def ensure_sabnzbd_download_client(app, url, arr_api_key, sab_api_key, category)
         refreshed = current_client()
         if refreshed is not None:
             refreshed_fields = {field.get("name"): field.get("value") for field in refreshed.get("fields") or []}
-            if refreshed.get("priority") == 1 and all(
+            if refreshed.get("priority") == priority and all(
                 refreshed_fields.get(name) == value for name, value in comparable_desired.items()
             ):
                 return
         time.sleep(2)
 
     raise RuntimeError(f"{app} SABnzbd download client did not converge")
+
+
+def qbit_state():
+    enabled = service_enabled("qbittorrent-vpn")
+    configured = enabled and bool(QBIT_USERNAME.strip()) and bool(QBIT_PASSWORD.strip())
+    healthy = False
+    if enabled:
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    f"http://127.0.0.1:{QBIT_PORT}/api/v2/app/version",
+                    method="GET",
+                ),
+                timeout=20,
+            ).read()
+            if configured:
+                login_payload = urllib.parse.urlencode(
+                    {"username": QBIT_USERNAME, "password": QBIT_PASSWORD}
+                ).encode()
+                urllib.request.urlopen(
+                    urllib.request.Request(
+                        f"http://127.0.0.1:{QBIT_PORT}/api/v2/auth/login",
+                        data=login_payload,
+                        method="POST",
+                    ),
+                    timeout=20,
+                ).read()
+                healthy = True
+            else:
+                healthy = True
+        except Exception:
+            healthy = False
+    usable = enabled and configured and healthy
+    return {
+        "enabled": enabled,
+        "configured": configured,
+        "healthy": healthy,
+        "usable": usable,
+    }
+
+
+def sab_state():
+    enabled = service_enabled("sabnzbd")
+    config_path = Path(CONFIG_PATH) / "sabnzbd" / "sabnzbd.ini"
+    configured = False
+    healthy = False
+    api_key = ""
+    if enabled:
+        api_key = (os.environ.get("SABNZBD_API_KEY") or "").strip()
+        if not api_key and config_path.exists():
+            try:
+                import configparser
+
+                parser = configparser.ConfigParser()
+                parser.read_string("[root]\n" + config_path.read_text(encoding="utf-8"))
+                if parser.has_section("misc"):
+                    api_key = (parser.get("misc", "api_key", fallback="") or "").strip()
+            except Exception:
+                api_key = ""
+        server_host = (os.environ.get("SABNZBD_SERVER_HOST") or "").strip()
+        server_enabled = truthy(os.environ.get("SABNZBD_SERVER_ENABLE"))
+        configured = bool(api_key and server_host and server_enabled)
+        if configured:
+            try:
+                urllib.request.urlopen(
+                    urllib.request.Request(
+                        f"http://127.0.0.1:8085/api?mode=version&apikey={api_key}",
+                        method="GET",
+                    ),
+                    timeout=20,
+                ).read()
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:8085/api?mode=get_config&section=servers&apikey={api_key}",
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    payload = json.loads(response.read().decode("utf-8") or "{}")
+                servers = payload.get("servers") or {}
+                healthy = any(
+                    bool((server.get("enable") or "").strip() in {"1", "true", "True"})
+                    for server in servers.values()
+                    if isinstance(server, dict)
+                )
+            except Exception:
+                healthy = False
+    usable = enabled and configured and healthy
+    return {
+        "enabled": enabled,
+        "configured": configured,
+        "healthy": healthy,
+        "usable": usable,
+        "api_key": api_key,
+    }
+
+
+def select_protocols():
+    qbit = qbit_state()
+    sab = sab_state()
+    write_env_value("VMCTL_QBITTORRENT_CONFIGURED", str(qbit["configured"]).lower())
+    write_env_value("VMCTL_QBITTORRENT_HEALTHY", str(qbit["healthy"]).lower())
+    write_env_value("VMCTL_QBITTORRENT_USABLE", str(qbit["usable"]).lower())
+    write_env_value("VMCTL_SABNZBD_CONFIGURED", str(sab["configured"]).lower())
+    write_env_value("VMCTL_SABNZBD_HEALTHY", str(sab["healthy"]).lower())
+    write_env_value("VMCTL_SABNZBD_USABLE", str(sab["usable"]).lower())
+
+    ordered = []
+    for protocol in [DOWNLOAD_ROUTING_PREFER, DOWNLOAD_ROUTING_FALLBACK, "usenet", "torrent"]:
+        if protocol not in {"usenet", "torrent"}:
+            continue
+        if protocol in ordered:
+            continue
+        if protocol == "usenet" and sab["usable"]:
+            ordered.append(protocol)
+        elif protocol == "torrent" and qbit["usable"]:
+            ordered.append(protocol)
+
+    if not ordered:
+        write_env_value("VMCTL_DOWNLOAD_PROTOCOLS", "")
+        if DOWNLOAD_ROUTING_REQUIRE_CLIENT:
+            raise RuntimeError(
+                "No usable download clients. Enable and configure either qBittorrent or SABnzbd before applying."
+            )
+        return qbit, sab, ordered
+
+    write_env_value("VMCTL_DOWNLOAD_PROTOCOLS", ",".join(ordered))
+    return qbit, sab, ordered
 
 
 apps = {
@@ -515,15 +720,35 @@ apps = {
 }
 
 resolved = {}
+qbit, sab, allowed_protocols = select_protocols()
+protocol_priority = {protocol: index + 1 for index, protocol in enumerate(allowed_protocols)}
 for app, cfg in apps.items():
     key = read_api_key(app)
     root, discovered_base = detect_api_base(app, cfg["url"], key, "/api/v3", cfg["base"])
     api_url = f"{root}{discovered_base}"
     ensure_root_folder(api_url, key, cfg["root"])
-    ensure_qbittorrent_download_client(app, api_url, key, cfg["category"])
-    if service_enabled("sabnzbd"):
-        sab_api_key = read_sabnzbd_api_key()
-        ensure_sabnzbd_download_client(app, api_url, key, sab_api_key, cfg["category"])
+    if qbit["usable"]:
+        ensure_qbittorrent_download_client(
+            app,
+            api_url,
+            key,
+            cfg["category"],
+            protocol_priority.get("torrent", 1),
+        )
+    else:
+        remove_download_client(app, api_url, key, "qBittorrent")
+    if sab["usable"]:
+        sab_api_key = sab["api_key"] or read_sabnzbd_api_key()
+        ensure_sabnzbd_download_client(
+            app,
+            api_url,
+            key,
+            sab_api_key,
+            cfg["category"],
+            protocol_priority.get("usenet", 1),
+        )
+    else:
+        remove_download_client(app, api_url, key, "SABnzbd")
     resolved[app] = {"url": app_base(cfg["internal_url"], cfg["base"]), "key": key}
 
 prowlarr_url = os.environ.get("PROWLARR_URL", "http://localhost:9696")
@@ -531,7 +756,7 @@ prowlarr_base = ""
 prowlarr_key = read_api_key("prowlarr")
 prowlarr_root, prowlarr_discovered_base = detect_api_base("prowlarr", prowlarr_url, prowlarr_key, "/api/v1", prowlarr_base)
 prowlarr_api = f"{prowlarr_root}{prowlarr_discovered_base}"
-ensure_default_indexers(prowlarr_api, prowlarr_key)
+ensure_default_indexers(prowlarr_api, prowlarr_key, allowed_protocols)
 ensure_flaresolverr_proxy(prowlarr_api, prowlarr_key)
 
 for app_name, values in resolved.items():

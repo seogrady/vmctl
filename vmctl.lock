@@ -15,7 +15,7 @@ name = "media-stack"
 kind = "vm"
 vmid = 210
 backend_address = "module.media_stack.proxmox_virtual_environment_vm.this"
-digest = "sha256:a30d561eec8743d745b0f18fcfe33c783e6b62c4beca7ee66123bddfff8c8d01"
+digest = "sha256:371a0c38c0c7879cff34b71a273566e6c1a6a47552fe7b4cc2ddecb1c1698bcd"
 exists = true
 
 [[resources]]
@@ -56,11 +56,11 @@ digest = "sha256:1936aefac902f77b492259cbf9649c367de2fa7c0e743ca47614e9acbefabea
 
 [[artifacts]]
 path = "desired-state.json"
-digest = "sha256:caac52a7e05d0cf1ec6ee0dcf2730da155cc6ce8808002ac2102feb0e2f8c53c"
+digest = "sha256:965b4c154f10a7fe391d3de9d0ba8f3baa2d8ed974e5fc957d1a53b399b3144c"
 
 [[artifacts]]
 path = "main.tf.json"
-digest = "sha256:d302939fbfb9422b25797cd868bfc20d9b02ba40081b7f1f4d36e603e574226e"
+digest = "sha256:dd27fabc5e523b6481c89f66b825d6078f05da40f7e2dc72a14c73c937782b4a"
 
 [[artifacts]]
 path = "modules/lxc/main.tf.json"
@@ -132,15 +132,15 @@ digest = "sha256:1016e059723a0a50f1dc58b3b2896e05dc2062b649e5230fc1590786d4e5c06
 
 [[artifacts]]
 path = "resources/media-stack/media-index.html"
-digest = "sha256:48e114691681d9bc21c8985fb5cba178c25db2874658a00de1cd54f889fcecf4"
+digest = "sha256:b3c55c48589caa563352622b4aa84c4c3e63f8649ede29b5933f0c44c1f7427e"
 
 [[artifacts]]
 path = "resources/media-stack/media.env"
-digest = "sha256:3a8791993698c9278c43b6328a74d16e5de84fb7e618d143c7da4b5467234a98"
+digest = "sha256:84c9622165f84988799289d5b6b5e607d875c02634f9141c12450fc8bc7227be"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-arr.sh"
-digest = "sha256:44593cf31edf961ebb3e0b3f0fd9e4b1aa0907a5ee64aa73622a35ffc76d001f"
+digest = "sha256:1637705b76e271c90f379dd624ec73e373504e1e8f3cc17f1411d7e9a6af1f41"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-autobrr.sh"
@@ -148,7 +148,7 @@ digest = "sha256:ab501b9f08ab20cbbda404b5e8ba0893412697af4b87c64b246c1c5093c0afc
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-download-unpack.sh"
-digest = "sha256:627c23bc60591d612c580b40b8291b80b3026918c22eec0270d2ecaeacf17b3a"
+digest = "sha256:809c0b8a80fb000ffb863784e3a156357aab465f96d995619bfa6fe7cdb07e03"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-flaresolverr.sh"
@@ -176,7 +176,7 @@ digest = "sha256:ec99d40387633f3e27caed36dc3ae4ee0d75e29f6199f0cc3a82e022fb3e8ca
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-media.sh"
-digest = "sha256:c280a810845def926e6a44071d0abe5651417c803e48850d376559cd81bc6564"
+digest = "sha256:62372c14945a4ea76dfc7aa4c83a05bb22032f8413bdffb0799dd49150a77ea3"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-node.sh"
@@ -184,7 +184,7 @@ digest = "sha256:3a9d819e73a8ad03772b7d1af06a06020f28b71eff70c1df2a1bb7788cec216
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-qbittorrent.sh"
-digest = "sha256:490c0beb92c1ff2ef38aaef66df982f6c080a45c1b9f8aad4090613a4f5c9209"
+digest = "sha256:d895c0a21afb25499ca11d3b5331967abe680b501f1a639ed3500f77096caf9e"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-recyclarr.sh"
@@ -192,7 +192,7 @@ digest = "sha256:8785b3d2e36e2a37b279b341ed98b4b9aacb6733125d1a38bacbc31d80e3ee5
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-sabnzbd.sh"
-digest = "sha256:13ec7d3dff39d1b17673d3a9901365b566a471036120eb771bdde6e4fda73527"
+digest = "sha256:ccc0fc69122906db146c07aebab387911bafcb77d80b01a01a7aa0e0f6ad20ac"
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-seerr.sh"
@@ -212,7 +212,7 @@ digest = "sha256:e1a2f6322ceb9d59c124ab621af248e5d53a5530cfd261448abcaea124c94b2
 
 [[artifacts]]
 path = "resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
-digest = "sha256:35e21ad00e9d74c3050410a383b6b73cba09c87b7da2ccb2d4df9df621c1a0da"
+digest = "sha256:68a4667e9b09d3b056b827c5b13187d81df81a8cc65519372824f6a10e8010a5"
 
 [[artifacts]]
 path = "resources/media-stack/tailscale-setup.sh"
@@ -232,7 +232,7 @@ digest = "sha256:4188c24c4b5763aaf0f9391824dfeebad16f90b6492ffe01b0264783ce62744
 
 [[artifacts]]
 path = "terraform.tfstate"
-digest = "sha256:d7df1378b9a4376fd397447539c0776f3c73fef2948720a66489b4f43d501c05"
+digest = "sha256:8e367ad72289b0d9f5b59e6a6930055da5da557fdcb1a97e087f3d279828dd49"
 
 [[artifacts]]
 path = "terraform.tfstate.1776751520.backup"
@@ -240,11 +240,11 @@ digest = "sha256:e671ed0896848f962f4011997fb8470a86dff0c9f69d9dc6f562e8b4fb3153f
 
 [[artifacts]]
 path = "terraform.tfstate.backup"
-digest = "sha256:07ee844d284cbb09cdf8099e4882343ab007e9f178487a3d60e875e1cd1a832e"
+digest = "sha256:e85a22005ea676eb1196418155fca626e897fab36c6fdaf42565d87a53e73d45"
 
 [[artifacts]]
 path = "terraform.tfvars.json"
-digest = "sha256:0a185c2ff156a8f67ac551b126c5b2dd4b1bfa19b6e5e047af65840a96bbad0b"
+digest = "sha256:df472fb04dab85e43ba5daff6a0c931688089fa30f747745895e12e929737516"
 
 [[artifacts]]
 path = "variables.tf.json"

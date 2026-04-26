@@ -303,11 +303,13 @@ for app, status_url in (
         clients = json.loads(response.read().decode("utf-8"))
 
     target = next((item for item in clients if item.get("name") == "qBittorrent"), None)
+    sab_target = next((item for item in clients if item.get("name") == "SABnzbd"), None)
     if not target:
         raise SystemExit(f"validation failed: {app} missing qBittorrent download client")
-    if int(target.get("priority") or 0) != 2:
+    expected_qbit_priority = 2 if sab_target else 1
+    if int(target.get("priority") or 0) != expected_qbit_priority:
         raise SystemExit(
-            f"validation failed: {app} qBittorrent priority mismatch: {target.get('priority')!r} != 2"
+            f"validation failed: {app} qBittorrent priority mismatch: {target.get('priority')!r} != {expected_qbit_priority!r}"
         )
     fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
     if fields.get("host") != expected[app]["download_host"]:
@@ -441,27 +443,30 @@ if parser.has_section("misc"):
     api_key = (parser.get("misc", "api_key", fallback="") or "").strip()
 if not api_key:
     raise SystemExit("validation failed: SABnzbd API key is empty")
-server_host = (os.environ.get("SABNZBD_SERVER_HOST") or "").strip() or "127.0.0.1"
-if f"[[{server_host}]]" not in config_text:
-    raise SystemExit(f"validation failed: SABnzbd server subsection missing [[{server_host}]]")
+server_host = (os.environ.get("SABNZBD_SERVER_HOST") or "").strip()
+server_enabled = (os.environ.get("SABNZBD_SERVER_ENABLE") or "").strip().lower() not in {"", "0", "false", "no", "off"}
+if server_enabled and server_host:
+    if f"[[{server_host}]]" not in config_text:
+        raise SystemExit(f"validation failed: SABnzbd server subsection missing [[{server_host}]]")
 host_whitelist = ""
 if parser.has_section("misc"):
     host_whitelist = (parser.get("misc", "host_whitelist", fallback="") or "").strip()
-host_tokens = {item.strip() for item in host_whitelist.split(",") if item.strip()}
-for required in ("sabnzbd", "media-stack"):
-    if required not in host_tokens:
-        raise SystemExit(
-            f"validation failed: SABnzbd host_whitelist missing {required}: {host_whitelist!r}"
-        )
-local_ranges = ""
-if parser.has_section("misc"):
-    local_ranges = (parser.get("misc", "local_ranges", fallback="") or "").strip()
-local_tokens = {item.strip() for item in local_ranges.split(",") if item.strip()}
-for required in ("100.64.0.0/10", "172.18.0.0/16", "192.168.0.0/16"):
-    if required not in local_tokens:
-        raise SystemExit(
-            f"validation failed: SABnzbd local_ranges missing {required}: {local_ranges!r}"
-        )
+if server_enabled and server_host:
+    host_tokens = {item.strip() for item in host_whitelist.split(",") if item.strip()}
+    for required in ("sabnzbd", "media-stack"):
+        if required not in host_tokens:
+            raise SystemExit(
+                f"validation failed: SABnzbd host_whitelist missing {required}: {host_whitelist!r}"
+            )
+    local_ranges = ""
+    if parser.has_section("misc"):
+        local_ranges = (parser.get("misc", "local_ranges", fallback="") or "").strip()
+    local_tokens = {item.strip() for item in local_ranges.split(",") if item.strip()}
+    for required in ("100.64.0.0/10", "172.18.0.0/16", "192.168.0.0/16"):
+        if required not in local_tokens:
+            raise SystemExit(
+                f"validation failed: SABnzbd local_ranges missing {required}: {local_ranges!r}"
+            )
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -490,6 +495,16 @@ names = set(cats.get("categories") or [])
 if not {"tv", "movies"}.issubset(names):
     raise SystemExit(f"validation failed: SABnzbd categories missing tv/movies: {sorted(names)!r}")
 
+download_protocols = [
+    item.strip()
+    for item in (os.environ.get("VMCTL_DOWNLOAD_PROTOCOLS") or "").split(",")
+    if item.strip()
+]
+if not download_protocols:
+    raise SystemExit("validation failed: VMCTL_DOWNLOAD_PROTOCOLS is empty")
+selected_priorities = {protocol: index + 1 for index, protocol in enumerate(download_protocols)}
+sab_expected = "usenet" in selected_priorities
+
 expected = {
     "sonarr": {
         "host": urllib.parse.urlparse(os.environ.get("SABNZBD_INTERNAL_URL", "http://sabnzbd:8080")).hostname or "sabnzbd",
@@ -514,11 +529,15 @@ for app, status_url in (
     with urllib.request.urlopen(req, timeout=20) as response:
         clients = json.loads(response.read().decode("utf-8"))
     target = next((item for item in clients if item.get("name") == "SABnzbd"), None)
+    if not sab_expected:
+        if target:
+            raise SystemExit(f"validation failed: {app} unexpectedly still has SABnzbd configured")
+        continue
     if not target:
         raise SystemExit(f"validation failed: {app} missing SABnzbd download client")
-    if int(target.get("priority") or 0) != 1:
+    if int(target.get("priority") or 0) != selected_priorities["usenet"]:
         raise SystemExit(
-            f"validation failed: {app} SABnzbd priority mismatch: {target.get('priority')!r} != 1"
+            f"validation failed: {app} SABnzbd priority mismatch: {target.get('priority')!r} != {selected_priorities['usenet']!r}"
         )
     fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
     if fields.get("host") != expected[app]["host"]:
@@ -615,6 +634,85 @@ if not target:
 fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
 if not str(fields.get("host") or "").rstrip("/").endswith("flaresolverr:8191"):
     raise SystemExit(f"validation failed: Prowlarr FlareSolverr host mismatch: {fields.get('host')!r}")
+
+download_protocols = [
+    item.strip()
+    for item in (os.environ.get("VMCTL_DOWNLOAD_PROTOCOLS") or "").split(",")
+    if item.strip()
+]
+selected_protocols = set(download_protocols)
+managed_torrent = {
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT") or "").split(",")
+    if item.strip()
+}
+managed_usenet = {
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_USENET") or "").split(",")
+    if item.strip()
+}
+req = urllib.request.Request("http://127.0.0.1:9696/api/v1/indexer", headers={"X-Api-Key": api_key}, method="GET")
+with urllib.request.urlopen(req, timeout=20) as response:
+    indexers = json.loads(response.read().decode("utf-8"))
+enabled_names = {item.get("name") for item in indexers if item.get("enable")}
+req = urllib.request.Request("http://127.0.0.1:9696/api/v1/indexer/schema", headers={"X-Api-Key": api_key}, method="GET")
+with urllib.request.urlopen(req, timeout=20) as response:
+    schemas = json.loads(response.read().decode("utf-8"))
+schema_names = {item.get("name") for item in schemas if item.get("name")}
+managed_torrent = managed_torrent & schema_names
+managed_usenet = managed_usenet & schema_names
+if "torrent" in selected_protocols and not managed_torrent:
+    raise SystemExit("validation failed: no schema-backed torrent indexers are available in Prowlarr")
+if "usenet" in selected_protocols and not managed_usenet:
+    raise SystemExit("validation failed: no schema-backed usenet indexers are available in Prowlarr")
+
+if "torrent" in selected_protocols:
+    if not managed_torrent.issubset(enabled_names):
+        raise SystemExit(
+            f"validation failed: Prowlarr torrent indexers missing or disabled: {sorted(managed_torrent - enabled_names)!r}"
+        )
+else:
+    if managed_torrent & enabled_names:
+        raise SystemExit(
+            f"validation failed: Prowlarr torrent indexers should be disabled: {sorted(managed_torrent & enabled_names)!r}"
+        )
+
+if "usenet" in selected_protocols:
+    if not managed_usenet.issubset(enabled_names):
+        raise SystemExit(
+            f"validation failed: Prowlarr usenet indexers missing or disabled: {sorted(managed_usenet - enabled_names)!r}"
+        )
+else:
+    if managed_usenet & enabled_names:
+        raise SystemExit(
+            f"validation failed: Prowlarr usenet indexers should be disabled: {sorted(managed_usenet & enabled_names)!r}"
+        )
+
+compatibility_path = Path("/var/lib/vmctl/download-unpack/compatibility.json")
+if compatibility_path.exists():
+    compatibility = json.loads(compatibility_path.read_text(encoding="utf-8"))
+    incompatible = {
+        key: value
+        for key, value in compatibility.items()
+        if isinstance(value, dict) and not value.get("compatible", False)
+    }
+    if incompatible:
+        preview = []
+        for key, value in list(incompatible.items())[:10]:
+            preview.append(
+                " | ".join(
+                    [
+                        str(key),
+                        f"path={value.get('path') or 'unknown'}",
+                        f"container={value.get('container') or 'unknown'}",
+                        f"video={','.join(value.get('videoCodecs') or []) or '-'}",
+                        f"audio={','.join(value.get('audioCodecs') or []) or '-'}",
+                        f"subtitles={','.join(value.get('subtitleCodecs') or []) or '-'}",
+                        f"reason={value.get('reason') or 'unknown'}",
+                    ]
+                )
+            )
+        raise SystemExit("validation failed: unsupported media detected: " + "; ".join(preview))
 PY
 fi
 
@@ -631,6 +729,18 @@ if service_enabled "qbittorrent-vpn"; then
 import json
 import os
 import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+download_protocols = [
+    item.strip()
+    for item in (os.environ.get("VMCTL_DOWNLOAD_PROTOCOLS") or "").split(",")
+    if item.strip()
+]
+if not download_protocols:
+    raise SystemExit("validation failed: VMCTL_DOWNLOAD_PROTOCOLS is empty")
+selected_priorities = {protocol: index + 1 for index, protocol in enumerate(download_protocols)}
+torrent_expected = "torrent" in selected_priorities
 
 base = f"http://127.0.0.1:{os.environ.get('QBITTORRENT_WEBUI_PORT', '8080')}"
 username = os.environ.get("QBITTORRENT_USERNAME", "admin")
@@ -665,6 +775,145 @@ if qbit_effective_path(payload.get(os.environ.get("QBITTORRENT_CATEGORY_TV", "tv
     raise SystemExit("validation failed: qBittorrent TV category save path mismatch")
 if qbit_effective_path(payload.get(os.environ.get("QBITTORRENT_CATEGORY_MOVIES", "movies"), {})) != expected_movies:
     raise SystemExit("validation failed: qBittorrent movies category save path mismatch")
+
+config_root = Path(os.environ.get("CONFIG_PATH") or "/opt/media/config")
+expected = {
+    "sonarr": {
+        "hostname": "sonarr",
+        "port": 8989,
+        "root": os.environ.get("SONARR_ROOT_FOLDER", "/data/media/tv"),
+        "profile": os.environ.get("SONARR_DEFAULT_QUALITY_PROFILE", "WEB-1080p"),
+        "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
+        "category": os.environ.get("QBITTORRENT_CATEGORY_TV", "tv"),
+        "category_field": "tvCategory",
+    },
+    "radarr": {
+        "hostname": "radarr",
+        "port": 7878,
+        "root": os.environ.get("RADARR_ROOT_FOLDER", "/data/media/movies"),
+        "profile": os.environ.get("RADARR_DEFAULT_QUALITY_PROFILE", "HD Bluray + WEB"),
+        "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
+        "category": os.environ.get("QBITTORRENT_CATEGORY_MOVIES", "movies"),
+        "category_field": "movieCategory",
+    },
+}
+
+for app, status_url in (
+    ("sonarr", "http://127.0.0.1:8989/api/v3/downloadclient"),
+    ("radarr", "http://127.0.0.1:7878/api/v3/downloadclient"),
+):
+    key = (ET.parse(Path(os.environ.get("CONFIG_PATH") or "/opt/media/config") / app / "config.xml").getroot().findtext("ApiKey") or "").strip()
+    req = urllib.request.Request(status_url, headers={"X-Api-Key": key}, method="GET")
+    with urllib.request.urlopen(req, timeout=20) as response:
+        clients = json.loads(response.read().decode("utf-8"))
+    target = next((item for item in clients if item.get("name") == "qBittorrent"), None)
+    if not torrent_expected:
+        if target:
+            raise SystemExit(f"validation failed: {app} unexpectedly still has qBittorrent configured")
+        continue
+    if not target:
+        raise SystemExit(f"validation failed: {app} missing qBittorrent download client")
+    if int(target.get("priority") or 0) != (2 if any(item.get("name") == "SABnzbd" for item in clients) else 1):
+        raise SystemExit(
+            f"validation failed: {app} qBittorrent priority mismatch: {target.get('priority')!r} != {(2 if any(item.get('name') == 'SABnzbd' for item in clients) else 1)!r}"
+        )
+    fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
+    if fields.get("host") != expected[app]["download_host"]:
+        raise SystemExit(
+            f"validation failed: {app} qBittorrent host mismatch: {fields.get('host')!r} != {expected[app]['download_host']!r}"
+        )
+    if str(fields.get(expected[app]["category_field"]) or "") != expected[app]["category"]:
+        raise SystemExit(
+            f"validation failed: {app} qBittorrent category mismatch: {fields.get(expected[app]['category_field'])!r} != {expected[app]['category']!r}"
+        )
+
+PY
+fi
+
+if service_enabled "prowlarr"; then
+  check_container_running "prowlarr"
+  check_http_ok "http://127.0.0.1:9696/ping" "prowlarr ping"
+  check_http_no_auth "http://127.0.0.1:9696/ping" "prowlarr no-login ping"
+  python3 <<'PY'
+import json
+import os
+import urllib.request
+
+api_key = (os.environ.get("PROWLARR_API_KEY") or "").strip()
+if not api_key:
+    config_path = os.path.join(os.environ.get("CONFIG_PATH") or "/opt/media/config", "prowlarr", "config.xml")
+    if os.path.exists(config_path):
+        import xml.etree.ElementTree as ET
+
+        api_key = (ET.parse(config_path).getroot().findtext("ApiKey") or "").strip()
+if not api_key:
+    raise SystemExit("validation failed: Prowlarr API key is missing")
+req = urllib.request.Request(
+    "http://127.0.0.1:9696/api/v1/indexerproxy",
+    headers={"X-Api-Key": api_key},
+    method="GET",
+)
+with urllib.request.urlopen(req, timeout=20) as response:
+    proxies = json.loads(response.read().decode("utf-8"))
+target = next((item for item in proxies if (item.get("name") or "").lower() == "flaresolverr"), None)
+if not target:
+    raise SystemExit("validation failed: Prowlarr missing FlareSolverr proxy")
+fields = {field.get("name"): field.get("value") for field in target.get("fields") or []}
+if not str(fields.get("host") or "").rstrip("/").endswith("flaresolverr:8191"):
+    raise SystemExit(f"validation failed: Prowlarr FlareSolverr host mismatch: {fields.get('host')!r}")
+
+download_protocols = [
+    item.strip()
+    for item in (os.environ.get("VMCTL_DOWNLOAD_PROTOCOLS") or "").split(",")
+    if item.strip()
+]
+selected_protocols = set(download_protocols)
+managed_torrent = {
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT") or "").split(",")
+    if item.strip()
+}
+managed_usenet = {
+    item.strip()
+    for item in (os.environ.get("PROWLARR_BOOTSTRAP_INDEXERS_USENET") or "").split(",")
+    if item.strip()
+}
+req = urllib.request.Request("http://127.0.0.1:9696/api/v1/indexer", headers={"X-Api-Key": api_key}, method="GET")
+with urllib.request.urlopen(req, timeout=20) as response:
+    indexers = json.loads(response.read().decode("utf-8"))
+enabled_names = {item.get("name") for item in indexers if item.get("enable")}
+req = urllib.request.Request("http://127.0.0.1:9696/api/v1/indexer/schema", headers={"X-Api-Key": api_key}, method="GET")
+with urllib.request.urlopen(req, timeout=20) as response:
+    schemas = json.loads(response.read().decode("utf-8"))
+schema_names = {item.get("name") for item in schemas if item.get("name")}
+managed_torrent = managed_torrent & schema_names
+managed_usenet = managed_usenet & schema_names
+if "torrent" in selected_protocols and not managed_torrent:
+    raise SystemExit("validation failed: no schema-backed torrent indexers are available in Prowlarr")
+if "usenet" in selected_protocols and not managed_usenet:
+    raise SystemExit("validation failed: no schema-backed usenet indexers are available in Prowlarr")
+
+if "torrent" in selected_protocols:
+    if not managed_torrent.issubset(enabled_names):
+        raise SystemExit(
+            f"validation failed: Prowlarr torrent indexers missing or disabled: {sorted(managed_torrent - enabled_names)!r}"
+        )
+else:
+    if managed_torrent & enabled_names:
+        raise SystemExit(
+            f"validation failed: Prowlarr torrent indexers should be disabled: {sorted(managed_torrent & enabled_names)!r}"
+        )
+
+if "usenet" in selected_protocols:
+    if not managed_usenet.issubset(enabled_names):
+        raise SystemExit(
+            f"validation failed: Prowlarr usenet indexers missing or disabled: {sorted(managed_usenet - enabled_names)!r}"
+        )
+else:
+    if managed_usenet & enabled_names:
+        raise SystemExit(
+            f"validation failed: Prowlarr usenet indexers should be disabled: {sorted(managed_usenet & enabled_names)!r}"
+        )
 PY
 fi
 

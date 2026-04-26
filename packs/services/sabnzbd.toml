@@ -1,5 +1,6 @@
 name = "sabnzbd"
 container_type = "docker"
+download_type = "usenet"
 
 [image]
 name = "lscr.io/linuxserver/sabnzbd"

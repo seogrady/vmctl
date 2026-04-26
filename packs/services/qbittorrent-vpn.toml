@@ -1,6 +1,7 @@
 name = "qbittorrent-vpn"
 container_type = "docker"
 vpn_route_through_gluetun = true
+download_type = "torrent"
 
 [image]
 name = "lscr.io/linuxserver/qbittorrent"

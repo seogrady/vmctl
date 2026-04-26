@@ -11,6 +11,20 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+MEDIA_SERVICES_CSV="${MEDIA_SERVICES:-}"
+
+service_enabled() {
+  local name="$1"
+  case ",${MEDIA_SERVICES_CSV}," in
+    *,"$name",*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! service_enabled "sabnzbd"; then
+  exit 0
+fi
+
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-media}"
 docker_compose() {
   docker compose -p "$COMPOSE_PROJECT_NAME" --project-directory "$STACK_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"

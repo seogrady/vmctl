@@ -1955,11 +1955,17 @@ mod tests {
         assert!(script.contains("ensure_default_indexers"));
         assert!(script.contains("ensure_flaresolverr_proxy"));
         assert!(script.contains("ensure_sabnzbd_download_client"));
+        assert!(script.contains("remove_download_client"));
+        assert!(script.contains("select_protocols()"));
+        assert!(script.contains("VMCTL_DOWNLOAD_PROTOCOLS"));
+        assert!(script.contains("DOWNLOAD_ROUTING_PREFER"));
+        assert!(script.contains("PROWLARR_INDEXERS_TORRENT"));
+        assert!(script.contains("PROWLARR_INDEXERS_USENET"));
         assert!(script.contains("protocol\": \"usenet\""));
         assert!(script.contains(
             "existing_names = {item.get(\"name\") for item in existing if item.get(\"name\")}"
         ));
-        assert!(script.contains("PROWLARR_BOOTSTRAP_INDEXERS"));
+        assert!(script.contains("ensure_default_indexers(prowlarr_api, prowlarr_key, allowed_protocols)"));
         assert!(script.contains("QBITTORRENT_CATEGORY_TV"));
         assert!(script.contains("QBITTORRENT_CATEGORY_MOVIES"));
         assert!(script.contains("SONARR_PROWLARR_CATEGORIES"));
@@ -1983,6 +1989,7 @@ mod tests {
         assert!(script.contains("configure_sabnzbd()"));
         assert!(script.contains("SABNZBD_SERVER_HOST"));
         assert!(script.contains("SABNZBD_SERVER_ENABLE"));
+        assert!(script.contains("env(\"SABNZBD_SERVER_ENABLE\", \"false\")"));
         assert!(script.contains("ensure_env_value \"$STACK_DIR/.env\" \"SEERR_API_KEY\""));
         assert!(script.contains("html.unescape(value)"));
         assert!(script.contains("ipv4 = [part for part in parts if \":\" not in part]"));
@@ -2015,6 +2022,18 @@ mod tests {
         assert!(script.contains("vmctl-media-unpack.timer"));
         assert!(script.contains("DownloadedMoviesScan"));
         assert!(script.contains("DownloadedEpisodesScan"));
+        assert!(script.contains("SABNZBD_COMPLETE"));
+        assert!(script.contains("process_usenet_downloads"));
+        assert!(script.contains("compatibility_report"));
+        assert!(script.contains("ffprobe"));
+        assert!(script.contains("MoviesSearch"));
+        assert!(script.contains("SeriesSearch"));
+        assert!(script.contains("recovery.json"));
+        assert!(script.contains("compatibility-summary.json"));
+        assert!(script.contains("compatibility-summary.txt"));
+        assert!(script.contains("rebuild_compatibility_summary"));
+        assert!(script.contains("UI_INDEX_ROOT"));
+        assert!(script.contains("mirror_ui_file"));
         assert!(script.contains("\"7z\", \"x\", \"-y\""));
         assert!(script.contains("jellyfin_refresh"));
     }
@@ -2107,9 +2126,19 @@ mod tests {
         assert!(env.contains("AUTOBRR_BASE_URL=/autobrr/"));
         assert!(env.contains("AUTOBRR_CUSTOM_DEFINITIONS=/config/definitions"));
         assert!(env.contains("PROWLARR_FLARESOLVERR_URL=http://flaresolverr:8191"));
-        assert!(env.contains(
-            "PROWLARR_BOOTSTRAP_INDEXERS=\"1337x,TorrentGalaxyClone,LimeTorrents,RuTracker,showRSS,EZTV,NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB\""
-        ));
+        assert!(env.contains("DOWNLOAD_ROUTING_PREFER={{features.media_services.download_routing.prefer}}"));
+        assert!(env.contains("DOWNLOAD_ROUTING_FALLBACK={{features.media_services.download_routing.fallback}}"));
+        assert!(env.contains("DOWNLOAD_ROUTING_REQUIRE_CLIENT={{features.media_services.download_routing.require_client}}"));
+        assert!(env.contains("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT=\"LimeTorrents,Nyaa.si,showRSS,The Pirate Bay,YTS\""));
+        assert!(env.contains("PROWLARR_BOOTSTRAP_INDEXERS_USENET=\"NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB\""));
+        assert!(env.contains("SABNZBD_SERVER_ENABLE=false"));
+        assert!(env.contains("VMCTL_QBITTORRENT_CONFIGURED="));
+        assert!(env.contains("VMCTL_QBITTORRENT_HEALTHY="));
+        assert!(env.contains("VMCTL_QBITTORRENT_USABLE="));
+        assert!(env.contains("VMCTL_SABNZBD_CONFIGURED="));
+        assert!(env.contains("VMCTL_SABNZBD_HEALTHY="));
+        assert!(env.contains("VMCTL_SABNZBD_USABLE="));
+        assert!(env.contains("VMCTL_DOWNLOAD_PROTOCOLS="));
         assert!(!env.contains("VMCTL_SEARCHDOMAIN="));
         assert!(!env.contains("VMCTL_HOST_FQDN="));
         assert!(!env.contains("VMCTL_HTTP_BASE_URL_FQDN="));
@@ -2141,6 +2170,10 @@ mod tests {
         assert!(script.contains("QBITTORRENT_DOWNLOADS"));
         assert!(script.contains("SABnzbd download client"));
         assert!(script.contains("SABnzbd priority mismatch"));
+        assert!(script.contains("compatibility.json"));
+        assert!(script.contains("unsupported media detected"));
+        assert!(script.contains("container="));
+        assert!(script.contains("subtitles="));
         assert!(script.contains("host_whitelist missing {required}"));
         assert!(script.contains("local_ranges ="));
         assert!(script.contains("SABnzbd server subsection missing"));
@@ -2184,6 +2217,8 @@ mod tests {
         assert!(index.contains(
             "wire(\"jellio-manifest-cloudflare-link\", \"/jellio-manifest.cloudflare.url\");"
         ));
+        assert!(index.contains("compatibility-summary-link"));
+        assert!(index.contains("wire(\"compatibility-summary-link\", \"/compatibility-summary.txt\");"));
         assert!(!index.contains("Jellyfin (Auto Auth)"));
         assert!(!index.contains("Seerr (Auto Auth)"));
     }
@@ -2220,6 +2255,13 @@ mod tests {
         assert!(service.contains("tag = \"v3.4.6\""));
         assert!(service.contains("LOG_LEVEL = \"info\""));
         assert!(!service.contains("[ui]"));
+    }
+
+    #[test]
+    fn media_prowlarr_service_definition_seeds_indexers_explicitly() {
+        let service = include_str!("../../../packs/services/prowlarr.toml");
+        assert!(service.contains("seed_indexers_torrent = [\"LimeTorrents\", \"Nyaa.si\", \"showRSS\", \"The Pirate Bay\", \"YTS\"]"));
+        assert!(service.contains("seed_indexers_usenet = [\"NZBFinder\", \"NZBGeek\", \"NinjaCentral\", \"DrunkenSlug\", \"Usenet Crawler\", \"altHUB\", \"SceneNZB\"]"));
     }
 
     #[test]
@@ -2331,6 +2373,11 @@ mod tests {
         assert!(generated_env.contains("QBITTORRENT_CATEGORY_TV_PATH=/data/torrents/tv"));
         assert!(generated_env.contains("QBITTORRENT_CATEGORY_MOVIES_PATH=/data/torrents/movies"));
         assert!(generated_env.contains("PROWLARR_FLARESOLVERR_URL=http://flaresolverr:8191"));
+        assert!(generated_env.contains("DOWNLOAD_ROUTING_PREFER=usenet"));
+        assert!(generated_env.contains("DOWNLOAD_ROUTING_FALLBACK=torrent"));
+        assert!(generated_env.contains("DOWNLOAD_ROUTING_REQUIRE_CLIENT=true"));
+        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT=\"LimeTorrents,Nyaa.si,showRSS,The Pirate Bay,YTS\""));
+        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_USENET=\"NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB\""));
         assert_file_fixture(
             &root.join("generated/resources/media-stack/scripts/bootstrap-node.sh"),
             include_str!(

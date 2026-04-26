@@ -147,6 +147,11 @@ jellyfin_admin_password = "${JELLYFIN_ADMIN_PASSWORD}"
 ui_homepage_enabled = true
 ui_homepage_title = "Media Stack"
 
+[resources.features.media_services.download_routing]
+prefer = "usenet"
+fallback = "torrent"
+require_client = true
+
 [resources.features.media_services.exposure]
 tailscale_https_enabled = true
 tailscale_https_target = "http://127.0.0.1:80"

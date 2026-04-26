@@ -76,7 +76,6 @@ WIREGUARD_ADDRESSES = ""
 VPN_SERVER_CITIES = ""
 PROWLARR_FLARESOLVERR_URL = "http://flaresolverr:8191"
 PROWLARR_FLARESOLVERR_TAGS = ""
-PROWLARR_BOOTSTRAP_INDEXERS = "1337x,TorrentGalaxyClone,LimeTorrents,RuTracker,showRSS,EZTV,NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB"
 
 [images.debian_12_lxc]
 kind = "lxc"
@@ -171,6 +170,11 @@ jellyfin_admin_user = "${JELLYFIN_ADMIN_USER}"
 jellyfin_admin_password = "${JELLYFIN_ADMIN_PASSWORD}"
 ui_homepage_enabled = true
 ui_homepage_title = "Media Stack"
+
+[resources.features.media_services.download_routing]
+prefer = "usenet"
+fallback = "torrent"
+require_client = true
 
 [resources.features.media_services.exposure]
 tailscale_https_enabled = true
