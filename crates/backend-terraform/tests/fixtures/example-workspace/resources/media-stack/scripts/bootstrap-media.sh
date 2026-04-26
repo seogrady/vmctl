@@ -301,6 +301,47 @@ recover_jellystat_db() {
   fi
 }
 
+write_storage_health_snapshot() {
+  if ! service_enabled "caddy"; then
+    return 0
+  fi
+
+  python3 - "$STORAGE_PATH" "$STACK_DIR/config/caddy/ui-index/storage-health.json" <<'PY'
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+storage_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+
+try:
+    stat = os.statvfs(storage_path)
+except FileNotFoundError:
+    raise SystemExit(f"storage path not found: {storage_path}")
+
+total_bytes = stat.f_frsize * stat.f_blocks
+free_bytes = stat.f_frsize * stat.f_bavail
+used_bytes = max(total_bytes - free_bytes, 0)
+gb = 1024 ** 3
+payload = {
+    "storagePath": str(storage_path),
+    "totalBytes": total_bytes,
+    "usedBytes": used_bytes,
+    "freeBytes": free_bytes,
+    "totalGb": round(total_bytes / gb, 2),
+    "usedGb": round(used_bytes / gb, 2),
+    "freeGb": round(free_bytes / gb, 2),
+    "usedPercent": round((used_bytes * 100.0 / total_bytes) if total_bytes else 0.0, 2),
+    "freePercent": round((free_bytes * 100.0 / total_bytes) if total_bytes else 0.0, 2),
+    "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+}
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 configure_sabnzbd() {
   if ! service_enabled "sabnzbd"; then
     return 0
@@ -469,6 +510,7 @@ if [[ -f "$RESOURCE_DIR/media-index.html" ]]; then
     install -m 0644 "$RESOURCE_DIR/media-index.html" "$STACK_DIR/config/caddy/ui-index/index.html"
   fi
 fi
+write_storage_health_snapshot
 if [[ -f "$RESOURCE_DIR/jellio-shim.py" ]]; then
   if service_enabled "jellio-shim"; then
     install -d "$STACK_DIR/config/jellio-shim"

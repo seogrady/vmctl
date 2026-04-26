@@ -10,6 +10,10 @@
     h1 { margin: 0 0 1rem; }
     .warning { margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid #d97706; border-radius: 10px; background: rgba(217, 119, 6, 0.12); color: inherit; }
     .warning strong { display: block; margin-bottom: .25rem; }
+    .warning.ok { border-color: #15803d; background: rgba(21, 128, 61, 0.12); }
+    .warning.warn { border-color: #d97706; }
+    .warning.critical { border-color: #b91c1c; background: rgba(185, 28, 28, 0.14); }
+    .warning .muted { display: block; margin-top: .25rem; opacity: .82; }
     ul { list-style: none; padding: 0; margin: 0; }
     li { margin: .75rem 0; padding: .75rem; border: 1px solid #8884; border-radius: 8px; }
     a { font-weight: 600; text-decoration: none; }
@@ -18,9 +22,14 @@
 </head>
 <body>
   <h1>{{features.media_services.ui_homepage_title}}</h1>
-  <div class="warning" role="note" aria-live="polite">
+  <div class="warning warn" id="storage-warning" role="note" aria-live="polite">
     <strong>Local storage warning</strong>
-    <span>The media stack currently uses local VM storage at <code>/data</code>. Keep the VM disk at 200 GB or larger until this data is migrated to NAS, or Radarr and Sonarr may stall on import when free space runs low.</span>
+    <span id="storage-warning-text">Loading current /data usage...</span>
+    <span class="muted">The media stack is still on local VM storage until the NAS migration lands.</span>
+  </div>
+  <div class="warning" role="note" aria-live="polite">
+    <strong>Generated artifact warning</strong>
+    <span>This page reflects generated vmctl artifacts from the last successful render. If packs or templates changed while an apply was already running, rerun <code>vmctl apply</code> so the rendered <code>.env</code> and bootstrap files are rebuilt together.</span>
   </div>
   <ul>
     {{#each ui_services}}
@@ -73,6 +82,42 @@
       wire("jellio-manifest-tailscale-link", "/jellio-manifest.tailscale.url");
       wire("jellio-manifest-cloudflare-link", "/jellio-manifest.cloudflare.url");
       wire("compatibility-summary-link", "/compatibility-summary.txt");
+
+      fetch("/storage-health.json", { cache: "no-store" })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          var banner = document.getElementById("storage-warning");
+          var text = document.getElementById("storage-warning-text");
+          if (!banner || !text || !data) return;
+
+          var totalGb = Number(data.totalGb || data.total_gb || 0);
+          var usedGb = Number(data.usedGb || data.used_gb || 0);
+          var freeGb = Number(data.freeGb || data.free_gb || 0);
+          var usedPercent = Number(data.usedPercent || data.used_percent || 0);
+          var storagePath = String(data.storagePath || data.storage_path || "/data");
+          function fmt(value) {
+            if (!isFinite(value)) return "0";
+            return value.toFixed(1).replace(/\.0$/, "");
+          }
+
+          var severity = "ok";
+          if (usedPercent >= 90) severity = "critical";
+          else if (usedPercent >= 80) severity = "warn";
+          banner.className = "warning " + severity;
+          text.innerHTML =
+            "Current usage for <code>" + storagePath + "</code>: " +
+            "<strong>" + fmt(usedGb) + " GB used</strong> of <strong>" + fmt(totalGb) + " GB total</strong> " +
+            "(" + fmt(freeGb) + " GB free, " + usedPercent.toFixed(1) + "% used)." +
+            (usedPercent >= 80
+              ? " Free space is getting tight; Radarr and Sonarr may stall if the disk fills."
+              : " Keep the VM disk at 200 GB or larger until the data moves to NAS.");
+        })
+        .catch(function () {
+          var text = document.getElementById("storage-warning-text");
+          if (text) {
+            text.textContent = "Unable to read live disk usage right now. The current /data mount should remain at 200 GB or larger.";
+          }
+        });
 
       fetch("/jellyfin-autologin.url", { cache: "no-store" })
         .then(function (res) { return res.ok ? res.text() : ""; })

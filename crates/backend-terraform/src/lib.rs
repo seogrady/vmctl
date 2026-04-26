@@ -2020,6 +2020,8 @@ mod tests {
         assert!(script.contains("service_enabled()"));
         assert!(script.contains("sync_template_env_defaults()"));
         assert!(script.contains("sync_template_env_defaults \"$RESOURCE_DIR/media.env\""));
+        assert!(script.contains("write_storage_health_snapshot()"));
+        assert!(script.contains("storage-health.json"));
         assert!(!script.contains("MEDIA_PUBLIC_BASE_URL_LAN"));
         assert!(!script.contains("VMCTL_HOST_FQDN"));
         assert!(!script.contains("/etc/hosts"));
@@ -2051,12 +2053,16 @@ mod tests {
         assert!(script.contains("ffprobe"));
         assert!(script.contains("raw_path = Path"));
         assert!(script.contains("content_path = raw_path if raw_path.is_dir() else raw_path.parent"));
+        assert!(script.contains("existing = state.get(torrent_id, {})"));
+        assert!(script.contains("existing.get(\"imported\") and existing.get(\"path\") == str(content_path)"));
         assert!(script.contains("MoviesSearch"));
         assert!(script.contains("SeriesSearch"));
         assert!(script.contains("recovery.json"));
         assert!(script.contains("compatibility-summary.json"));
         assert!(script.contains("compatibility-summary.txt"));
         assert!(script.contains("rebuild_compatibility_summary"));
+        assert!(script.contains("storage-health.json"));
+        assert!(script.contains("write_storage_health()"));
         assert!(script.contains("UI_INDEX_ROOT"));
         assert!(script.contains("mirror_ui_file"));
         assert!(script.contains("def service_enabled(name: str) -> bool:"));
@@ -2173,6 +2179,14 @@ mod tests {
     }
 
     #[test]
+    fn media_env_template_uses_seerr_service_setting_for_radarr_profile() {
+        let template = include_str!("../../../packs/templates/media.env.hbs");
+        assert!(template.contains(
+            "RADARR_DEFAULT_QUALITY_PROFILE=\"{{service_settings.seerr.settings.default_movie_quality_profile}}\""
+        ));
+    }
+
+    #[test]
     fn streaming_validation_fixture_checks_tizen_catalogs() {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-validate-streaming-stack.sh"
@@ -2182,6 +2196,10 @@ mod tests {
         assert!(script.contains("expected_locations = {"));
         assert!(script.contains("locations mismatch"));
         assert!(script.contains("parsed.path.lower().startswith(\"/videos/\")"));
+        assert!(script.contains("media_roots = {"));
+        assert!(script.contains("RADARR_ROOT_FOLDER"));
+        assert!(script.contains("SONARR_ROOT_FOLDER"));
+        assert!(script.contains("startswith(str(root))"));
         assert!(script.contains("settings/public\" \"seerr proxied public settings"));
         assert!(script.contains("settings_path = config_root / \"seerr\" / \"settings.json\""));
         assert!(script.contains("settings payload is missing applicationTitle"));
@@ -2247,6 +2265,8 @@ mod tests {
         assert!(index.contains("compatibility-summary-link"));
         assert!(index.contains("wire(\"compatibility-summary-link\", \"/compatibility-summary.txt\");"));
         assert!(index.contains("Local storage warning"));
+        assert!(index.contains("storage-health.json"));
+        assert!(index.contains("Generated artifact warning"));
         assert!(index.contains("200 GB or larger"));
         assert!(!index.contains("Jellyfin (Auto Auth)"));
         assert!(!index.contains("Seerr (Auto Auth)"));

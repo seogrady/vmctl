@@ -710,12 +710,21 @@ else:
         )
 
 compatibility_path = Path("/var/lib/vmctl/download-unpack/compatibility.json")
+media_roots = {
+    Path(os.environ.get("RADARR_ROOT_FOLDER", "/data/media/movies")).resolve(),
+    Path(os.environ.get("SONARR_ROOT_FOLDER", "/data/media/tv")).resolve(),
+}
 if compatibility_path.exists():
     compatibility = json.loads(compatibility_path.read_text(encoding="utf-8"))
     incompatible = {
         key: value
         for key, value in compatibility.items()
-        if isinstance(value, dict) and not value.get("compatible", False)
+        if isinstance(value, dict)
+        and not value.get("compatible", False)
+        and any(
+            str(value.get("path") or "").startswith(str(root))
+            for root in media_roots
+        )
     }
     if incompatible:
         preview = []

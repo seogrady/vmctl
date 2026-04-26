@@ -269,10 +269,15 @@ fn main() -> Result<()> {
             let (workspace, desired, registry, source_fingerprint) =
                 load_workspace_with_fingerprint(cli.config.as_deref(), &cli.packs, target.as_deref())?;
             check_dependencies(&desired, CommandScope::Provision)?;
-            TerraformBackend.render(&workspace, &desired, &registry)?;
-            ensure_workspace_sources_fresh(cli.config.as_deref(), &cli.packs, &source_fingerprint)?;
+            warn_workspace_sources_changed(cli.config.as_deref(), &cli.packs, &source_fingerprint)?;
             let progress = ApplyProgress::new();
-            let result = run_provision(&workspace, &desired, &progress)?;
+            let result = run_provision(
+                &workspace,
+                &desired,
+                &registry,
+                &vmctl_provision::SystemSshExecutor,
+                &progress,
+            )?;
             println!("{}", result.summary);
             Ok(())
         }
@@ -468,7 +473,7 @@ fn apply_command(
             )
         })?
     };
-    ensure_workspace_sources_fresh(config_path, packs_path, &source_fingerprint)?;
+    warn_workspace_sources_changed(config_path, packs_path, &source_fingerprint)?;
     guard.checkpoint("runtime repair after apply")?;
     repair_existing_runtime_settings(&desired)?;
     guard.checkpoint("lockfile write")?;
@@ -480,7 +485,13 @@ fn apply_command(
     }
     println!("{}; wrote vmctl.lock", result.summary);
     if !skip_provision {
-        let result = run_provision(&workspace, &provision_desired, &progress)?;
+        let result = run_provision(
+            &workspace,
+            &provision_desired,
+            &registry,
+            &vmctl_provision::SystemSshExecutor,
+            &progress,
+        )?;
         println!("{}", result.summary);
     }
     println!("vmctl apply complete");
@@ -2336,7 +2347,7 @@ fn dry_run_workspace(workspace: &Workspace) -> Workspace {
     }
 }
 
-fn ensure_workspace_sources_fresh(
+fn warn_workspace_sources_changed(
     config_path: Option<&Path>,
     packs_path: &Path,
     expected_fingerprint: &str,
@@ -2346,8 +2357,8 @@ fn ensure_workspace_sources_fresh(
         packs_path,
     )?;
     if current_fingerprint != expected_fingerprint {
-        bail!(
-            "workspace sources changed during apply; rerun vmctl so generated artifacts are rebuilt"
+        eprintln!(
+            "warning: workspace sources changed during apply; regenerating rendered artifacts before provisioning"
         );
     }
     Ok(())
@@ -2400,8 +2411,11 @@ fn check_dependencies(desired: &DesiredState, scope: CommandScope) -> Result<()>
 fn run_provision(
     workspace: &Workspace,
     desired: &DesiredState,
+    registry: &PackRegistry,
+    executor: &dyn vmctl_provision::SshExecutor,
     progress: &ApplyProgress,
 ) -> Result<vmctl_provision::ProvisionResult> {
+    refresh_rendered_workspace(workspace, desired, registry)?;
     let plan = vmctl_provision::build_provision_plan(workspace, desired)?;
     if plan.steps.is_empty() {
         return Ok(vmctl_provision::ProvisionResult {
@@ -2414,7 +2428,7 @@ fn run_provision(
     let mut resource_completed = BTreeMap::<String, usize>::new();
     let result = vmctl_provision::run_provision_plan_with_progress(
         &plan,
-        &vmctl_provision::SystemSshExecutor,
+        executor,
         |event| match event {
             vmctl_provision::ProvisionEvent::StepStarted { step, index, total } => {
                 spinner.set_message(format!(
@@ -2497,6 +2511,15 @@ fn run_provision(
             Err(error)
         }
     }
+}
+
+fn refresh_rendered_workspace(
+    workspace: &Workspace,
+    desired: &DesiredState,
+    registry: &PackRegistry,
+) -> Result<()> {
+    TerraformBackend.render(workspace, desired, registry)?;
+    Ok(())
 }
 
 fn provision_resource_totals(plan: &vmctl_provision::ProvisionPlan) -> BTreeMap<String, usize> {
@@ -3489,6 +3512,46 @@ Interface: vmbr0
 
         assert_ne!(first, second);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refresh_rendered_workspace_overwrites_stale_generated_media_env() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original_cwd = std::env::current_dir().unwrap();
+        let temp_root = unique_temp_dir();
+        std::fs::create_dir_all(&temp_root).unwrap();
+        std::env::set_current_dir(&temp_root).unwrap();
+
+        let result = (|| -> Result<()> {
+            let (workspace, desired, registry) = load_workspace(
+                Some(&repo_root.join("vmctl.toml")),
+                &repo_root.join("packs"),
+                None,
+            )?;
+            let stale_media_env = workspace
+                .root
+                .join(&workspace.generated_dir)
+                .join("resources/media-stack/media.env");
+            std::fs::create_dir_all(stale_media_env.parent().unwrap())?;
+            std::fs::write(
+                &stale_media_env,
+                "RADARR_DEFAULT_QUALITY_PROFILE=\"\"\n",
+            )?;
+
+            refresh_rendered_workspace(&workspace, &desired, &registry)?;
+
+            let rendered = std::fs::read_to_string(&stale_media_env)?;
+            assert!(
+                rendered.contains("RADARR_DEFAULT_QUALITY_PROFILE=\"HD - 720p/1080p\""),
+                "rendered media.env was:\n{}",
+                rendered
+            );
+            Ok(())
+        })();
+
+        std::env::set_current_dir(&original_cwd).unwrap();
+        std::fs::remove_dir_all(&temp_root).unwrap();
+        result.unwrap();
     }
 
     fn unique_temp_dir() -> PathBuf {

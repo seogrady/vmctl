@@ -53,6 +53,7 @@ RECOVERY_STATE_FILE = Path("/var/lib/vmctl/download-unpack/recovery.json")
 COMPATIBILITY_FILE = Path("/var/lib/vmctl/download-unpack/compatibility.json")
 COMPATIBILITY_SUMMARY_JSON = Path("/var/lib/vmctl/download-unpack/compatibility-summary.json")
 COMPATIBILITY_SUMMARY_TXT = Path("/var/lib/vmctl/download-unpack/compatibility-summary.txt")
+STORAGE_HEALTH_FILE = Path("/opt/media/config/caddy/ui-index/storage-health.json")
 VIDEO_SUFFIXES = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".webm", ".iso"}
 ARCHIVE_SUFFIXES = {".rar", ".r00", ".r01", ".r02", ".zip", ".7z"}
 RADARR_CATEGORIES = {"radarr", "movies"}
@@ -391,6 +392,33 @@ def rebuild_compatibility_summary() -> None:
     mirror_ui_file("compatibility-summary.json", COMPATIBILITY_SUMMARY_JSON.read_text(encoding="utf-8"))
 
 
+def write_storage_health() -> None:
+    storage_path = Path(ENV.get("STORAGE_PATH") or "/data")
+    try:
+        stat = os.statvfs(storage_path)
+    except FileNotFoundError:
+        return
+
+    total_bytes = stat.f_frsize * stat.f_blocks
+    free_bytes = stat.f_frsize * stat.f_bavail
+    used_bytes = max(total_bytes - free_bytes, 0)
+    gb = 1024 ** 3
+    payload = {
+        "storagePath": str(storage_path),
+        "totalBytes": total_bytes,
+        "usedBytes": used_bytes,
+        "freeBytes": free_bytes,
+        "totalGb": round(total_bytes / gb, 2),
+        "usedGb": round(used_bytes / gb, 2),
+        "freeGb": round(free_bytes / gb, 2),
+        "usedPercent": round((used_bytes * 100.0 / total_bytes) if total_bytes else 0.0, 2),
+        "freePercent": round((free_bytes * 100.0 / total_bytes) if total_bytes else 0.0, 2),
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    STORAGE_HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STORAGE_HEALTH_FILE.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def has_media_file(path: Path) -> bool:
     for child in path.rglob("*"):
         if child.is_file() and child.suffix.lower() in VIDEO_SUFFIXES:
@@ -446,7 +474,8 @@ def process_torrent_downloads(state):
         torrent_id = str(torrent.get("hash") or "").upper()
         if not torrent_id:
             continue
-        if state.get(torrent_id, {}).get("imported"):
+        existing = state.get(torrent_id, {})
+        if existing.get("imported") and existing.get("path") == str(content_path):
             continue
 
         extract_archive(content_path)
@@ -587,6 +616,7 @@ def process():
             print(f"warning: Jellyfin refresh skipped: {exc}")
     trigger_recovery()
     rebuild_compatibility_summary()
+    write_storage_health()
 
 
 wait_for("http://127.0.0.1:8080/api/v2/app/version", 240)
