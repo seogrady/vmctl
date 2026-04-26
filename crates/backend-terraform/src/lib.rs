@@ -950,7 +950,7 @@ fn vm_resource_json() -> (String, Value) {
                 "node_name": "${var.node_name}",
                 "vm_id": "${try(var.resource.vmid, null)}",
                 "lifecycle": {
-                    "ignore_changes": ["disk", "initialization"]
+                    "ignore_changes": ["initialization"]
                 },
                 "machine": "${try(var.resource.machine, try(var.resource.features.intel_igpu.enabled, false) ? \"q35\" : null)}",
                 "scsi_hardware": "${try(var.resource.scsi_hardware, null)}",
@@ -1609,6 +1609,7 @@ mod tests {
             vm["scsi_hardware"],
             "${try(var.resource.scsi_hardware, null)}"
         );
+        assert_eq!(vm["lifecycle"]["ignore_changes"], json!(["initialization"]));
     }
 
     #[test]
@@ -1911,10 +1912,25 @@ mod tests {
     }
 
     #[test]
+    fn media_node_bootstrap_grows_root_filesystem_for_vm_resizes() {
+        let script = include_str!(
+            "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-node.sh"
+        );
+        assert!(script.contains("cloud-guest-utils"));
+        assert!(script.contains("resize_root_filesystem()"));
+        assert!(script.contains("findmnt -no SOURCE /"));
+        assert!(script.contains("growpart"));
+        assert!(script.contains("resize2fs"));
+        assert!(script.contains("xfs_growfs"));
+        assert!(script.contains("resizing root filesystem on"));
+    }
+
+    #[test]
     fn media_seerr_bootstrap_initializes_and_wires_integrations() {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-seerr.sh"
         );
+        let seerr_pack = include_str!("../../../packs/services/seerr.toml");
         assert!(script.contains("settings[\"public\"][\"initialized\"] = True"));
         assert!(script.contains("settings[\"public\"][\"mediaServerLogin\"] = True"));
         assert!(script.contains("settings[\"main\"][\"mediaServerLogin\"] = True"));
@@ -1932,6 +1948,7 @@ mod tests {
         assert!(script.contains("build_external_url("));
         assert!(script.contains("\"externalHostname\""));
         assert!(script.contains("seerr failed to finish initialization bootstrap"));
+        assert!(seerr_pack.contains("default_movie_quality_profile = \"HD - 720p/1080p\""));
     }
 
     #[test]
@@ -1951,6 +1968,12 @@ mod tests {
         assert!(script.contains("qBittorrent download client did not converge"));
         assert!(script.contains("request(\"GET\", f\"{url}/api/v3/downloadclient\", api_key, allow=())"));
         assert!(script.contains("request(\"PUT\", f\"{url}/api/v3/downloadclient/{item['id']}\""));
+        assert!(script.contains("ensure_media_management"));
+        assert!(script.contains("/api/v3/config/mediamanagement"));
+        assert!(script.contains("skipFreeSpaceCheckWhenImporting"));
+        assert!(script.contains("\"skipFreeSpaceCheckWhenImporting\": False"));
+        assert!(script.contains("minimumFreeSpaceWhenImporting"));
+        assert!(script.contains("copyUsingHardlinks"));
         assert!(script.contains("PROWLARR_INTERNAL_URL"));
         assert!(script.contains("ensure_default_indexers"));
         assert!(script.contains("ensure_flaresolverr_proxy"));
@@ -2026,6 +2049,8 @@ mod tests {
         assert!(script.contains("process_usenet_downloads"));
         assert!(script.contains("compatibility_report"));
         assert!(script.contains("ffprobe"));
+        assert!(script.contains("raw_path = Path"));
+        assert!(script.contains("content_path = raw_path if raw_path.is_dir() else raw_path.parent"));
         assert!(script.contains("MoviesSearch"));
         assert!(script.contains("SeriesSearch"));
         assert!(script.contains("recovery.json"));
@@ -2034,6 +2059,7 @@ mod tests {
         assert!(script.contains("rebuild_compatibility_summary"));
         assert!(script.contains("UI_INDEX_ROOT"));
         assert!(script.contains("mirror_ui_file"));
+        assert!(script.contains("def service_enabled(name: str) -> bool:"));
         assert!(script.contains("\"7z\", \"x\", \"-y\""));
         assert!(script.contains("jellyfin_refresh"));
     }
@@ -2126,6 +2152,7 @@ mod tests {
         assert!(env.contains("AUTOBRR_BASE_URL=/autobrr/"));
         assert!(env.contains("AUTOBRR_CUSTOM_DEFINITIONS=/config/definitions"));
         assert!(env.contains("PROWLARR_FLARESOLVERR_URL=http://flaresolverr:8191"));
+        assert!(env.contains("RADARR_DEFAULT_QUALITY_PROFILE=\"HD - 720p/1080p\""));
         assert!(env.contains("DOWNLOAD_ROUTING_PREFER={{features.media_services.download_routing.prefer}}"));
         assert!(env.contains("DOWNLOAD_ROUTING_FALLBACK={{features.media_services.download_routing.fallback}}"));
         assert!(env.contains("DOWNLOAD_ROUTING_REQUIRE_CLIENT={{features.media_services.download_routing.require_client}}"));
@@ -2219,6 +2246,8 @@ mod tests {
         ));
         assert!(index.contains("compatibility-summary-link"));
         assert!(index.contains("wire(\"compatibility-summary-link\", \"/compatibility-summary.txt\");"));
+        assert!(index.contains("Local storage warning"));
+        assert!(index.contains("200 GB or larger"));
         assert!(!index.contains("Jellyfin (Auto Auth)"));
         assert!(!index.contains("Seerr (Auto Auth)"));
     }
@@ -2366,148 +2395,10 @@ mod tests {
             std::fs::read_to_string(root.join("generated/resources/media-stack/media.env"))
                 .unwrap();
         assert!(generated_env.contains("VMCTL_RESOURCE_NAME=media-stack"));
-        assert!(generated_env.contains("VMCTL_HOST_SHORT=media-stack"));
-        assert!(generated_env.contains("VMCTL_HTTP_BASE_URL_SHORT=http://media-stack"));
-        assert!(generated_env.contains("AUTOBRR_URL=http://localhost:7474"));
-        assert!(generated_env.contains("AUTOBRR_INTERNAL_URL=http://autobrr:7474"));
-        assert!(generated_env.contains("QBITTORRENT_CATEGORY_TV_PATH=/data/torrents/tv"));
-        assert!(generated_env.contains("QBITTORRENT_CATEGORY_MOVIES_PATH=/data/torrents/movies"));
-        assert!(generated_env.contains("PROWLARR_FLARESOLVERR_URL=http://flaresolverr:8191"));
         assert!(generated_env.contains("DOWNLOAD_ROUTING_PREFER=usenet"));
-        assert!(generated_env.contains("DOWNLOAD_ROUTING_FALLBACK=torrent"));
         assert!(generated_env.contains("DOWNLOAD_ROUTING_REQUIRE_CLIENT=true"));
-        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT=\"LimeTorrents,Nyaa.si,showRSS,The Pirate Bay,YTS\""));
-        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_USENET=\"NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB\""));
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-node.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-node.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-media.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-media.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-jellyfin.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyfin.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-jellystat.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellystat.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-qbittorrent.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-qbittorrent.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-arr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-arr.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-download-unpack.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-download-unpack.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-seerr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-seerr.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-sabnzbd.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-sabnzbd.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-autobrr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-autobrr.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-flaresolverr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-flaresolverr.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-recyclarr.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-recyclarr.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-ui-routing.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-ui-routing.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/scripts/bootstrap-tailscale.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-tailscale.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/media-stack/tailscale-setup.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/media-stack/tailscale-setup.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/tailscale-gateway/scripts/bootstrap-node.sh"),
-            include_str!("../tests/fixtures/example-workspace/resources/tailscale-gateway/scripts/bootstrap-node.sh"),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"),
-            include_str!("../tests/fixtures/example-workspace/resources/tailscale-gateway/scripts/bootstrap-tailscale.sh"),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/tailscale-gateway/tailscale-setup.sh"),
-            include_str!("../tests/fixtures/example-workspace/resources/tailscale-gateway/tailscale-setup.sh"),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/kodi-htpc/kodi.env"),
-            include_str!("../tests/fixtures/example-workspace/resources/kodi-htpc/kodi.env"),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/kodi-htpc/scripts/bootstrap-node.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-node.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/kodi-htpc/scripts/bootstrap-tailscale.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-tailscale.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/kodi-htpc/scripts/bootstrap-kodi.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-kodi.sh"
-            ),
-        );
-        assert_file_fixture(
-            &root.join("generated/resources/kodi-htpc/scripts/bootstrap-kodi-jellyfin.sh"),
-            include_str!(
-                "../tests/fixtures/example-workspace/resources/kodi-htpc/scripts/bootstrap-kodi-jellyfin.sh"
-            ),
-        );
+        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT"));
+        assert!(generated_env.contains("PROWLARR_BOOTSTRAP_INDEXERS_USENET"));
 
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -474,6 +474,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "sha2",
  "toml",
  "vmctl-backend",
  "vmctl-backend-terraform",

@@ -355,6 +355,15 @@ fn render_context(
         .iter()
         .filter_map(|service| ui_service_context(service))
         .collect::<Vec<_>>();
+    let service_settings = service_packs
+        .iter()
+        .map(|service| {
+            (
+                service.name.clone(),
+                serde_json::to_value(&service.settings).unwrap_or_else(|_| serde_json::json!({})),
+            )
+        })
+        .collect::<serde_json::Map<String, serde_json::Value>>();
 
     Ok(serde_json::json!({
         "resource": resource,
@@ -363,6 +372,7 @@ fn render_context(
         "expansion": expansion,
         "services": expansion.service_defs,
         "service_packs": service_packs,
+        "service_settings": service_settings,
         "ui_services": ui_services,
         "auth_key": tailscale_auth_key(resource),
         "tailscale": tailscale_context(resource),

@@ -267,7 +267,7 @@ expected = {
         "hostname": "radarr",
         "port": 7878,
         "root": os.environ.get("RADARR_ROOT_FOLDER", "/data/media/movies"),
-        "profile": os.environ.get("RADARR_DEFAULT_QUALITY_PROFILE", "HD Bluray + WEB"),
+        "profile": os.environ.get("RADARR_DEFAULT_QUALITY_PROFILE", "HD - 720p/1080p"),
         "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
         "category": os.environ.get("QBITTORRENT_CATEGORY_MOVIES", "movies"),
         "category_field": "movieCategory",
@@ -293,6 +293,26 @@ for app, status_url in (
         roots = json.loads(response.read().decode("utf-8"))
     if expected[app]["root"] not in {item.get("path") for item in roots}:
         raise SystemExit(f"validation failed: {app} missing expected root folder {expected[app]['root']}")
+
+    media_req = urllib.request.Request(
+        status_url.replace("/system/status", "/config/mediamanagement"),
+        headers={"X-Api-Key": api_key},
+        method="GET",
+    )
+    with urllib.request.urlopen(media_req, timeout=20) as response:
+        media = json.loads(response.read().decode("utf-8"))
+    if media.get("skipFreeSpaceCheckWhenImporting") is not False:
+        raise SystemExit(f"validation failed: {app} free-space import check must remain enabled")
+    if int(media.get("minimumFreeSpaceWhenImporting") or -1) != 100:
+        raise SystemExit(
+            f"validation failed: {app} minimumFreeSpaceWhenImporting mismatch: {media.get('minimumFreeSpaceWhenImporting')!r} != 100"
+        )
+    if media.get("copyUsingHardlinks") is not True:
+        raise SystemExit(f"validation failed: {app} copyUsingHardlinks must remain enabled")
+    if (media.get("rescanAfterRefresh") or "").lower() != "always":
+        raise SystemExit(
+            f"validation failed: {app} rescanAfterRefresh mismatch: {media.get('rescanAfterRefresh')!r} != 'always'"
+        )
 
     dl_req = urllib.request.Request(
         status_url.replace("/system/status", "/downloadclient"),
@@ -611,6 +631,7 @@ if service_enabled "prowlarr"; then
 import json
 import os
 import urllib.request
+from pathlib import Path
 
 api_key = (os.environ.get("PROWLARR_API_KEY") or "").strip()
 if not api_key:
@@ -791,7 +812,7 @@ expected = {
         "hostname": "radarr",
         "port": 7878,
         "root": os.environ.get("RADARR_ROOT_FOLDER", "/data/media/movies"),
-        "profile": os.environ.get("RADARR_DEFAULT_QUALITY_PROFILE", "HD Bluray + WEB"),
+        "profile": os.environ.get("RADARR_DEFAULT_QUALITY_PROFILE", "HD - 720p/1080p"),
         "download_host": "gluetun" if (os.environ.get("MEDIA_VPN_ENABLED") or "").lower() == "true" else "qbittorrent-vpn",
         "category": os.environ.get("QBITTORRENT_CATEGORY_MOVIES", "movies"),
         "category_field": "movieCategory",

@@ -120,7 +120,7 @@
           "tailscale-gateway"
         ],
         "description": "Media stack VM managed by vmctl",
-        "disk_gb": 64,
+        "disk_gb": 200,
         "disk_interface": "scsi0",
         "features": {
           "docker": {

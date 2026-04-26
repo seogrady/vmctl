@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use sha2::{Digest, Sha256};
 use toml::Value;
 use vmctl_backend::{EngineBackend, PlanMode, TargetSelector};
 use vmctl_backend_terraform::TerraformBackend;
@@ -265,10 +266,11 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Provision { target } => {
-            let (workspace, desired, registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, target.as_deref())?;
+            let (workspace, desired, registry, source_fingerprint) =
+                load_workspace_with_fingerprint(cli.config.as_deref(), &cli.packs, target.as_deref())?;
             check_dependencies(&desired, CommandScope::Provision)?;
             TerraformBackend.render(&workspace, &desired, &registry)?;
+            ensure_workspace_sources_fresh(cli.config.as_deref(), &cli.packs, &source_fingerprint)?;
             let progress = ApplyProgress::new();
             let result = run_provision(&workspace, &desired, &progress)?;
             println!("{}", result.summary);
@@ -402,10 +404,11 @@ fn apply_command(
     target: Option<&str>,
     _command: &str,
 ) -> Result<()> {
-    let (workspace, mut desired, registry) = load_workspace(config_path, packs_path, None)?;
+    let (workspace, mut desired, registry, source_fingerprint) =
+        load_workspace_with_fingerprint(config_path, packs_path, None)?;
     let mut provision_desired = if target.is_some() {
-        let (_target_workspace, target_desired, _target_registry) =
-            load_workspace(config_path, packs_path, target)?;
+        let (_target_workspace, target_desired, _target_registry, _target_fingerprint) =
+            load_workspace_with_fingerprint(config_path, packs_path, target)?;
         target_desired
     } else {
         desired.clone()
@@ -465,6 +468,7 @@ fn apply_command(
             )
         })?
     };
+    ensure_workspace_sources_fresh(config_path, packs_path, &source_fingerprint)?;
     guard.checkpoint("runtime repair after apply")?;
     repair_existing_runtime_settings(&desired)?;
     guard.checkpoint("lockfile write")?;
@@ -2292,6 +2296,16 @@ fn load_workspace(
     packs_path: &Path,
     target: Option<&str>,
 ) -> Result<(Workspace, DesiredState, PackRegistry)> {
+    let (workspace, desired, registry, _) =
+        load_workspace_with_fingerprint(config_path, packs_path, target)?;
+    Ok((workspace, desired, registry))
+}
+
+fn load_workspace_with_fingerprint(
+    config_path: Option<&Path>,
+    packs_path: &Path,
+    target: Option<&str>,
+) -> Result<(Workspace, DesiredState, PackRegistry, String)> {
     let workspace = default_workspace()?;
     let config_path = resolve_config_path(config_path)?.path;
     let raw = std::fs::read_to_string(&config_path)
@@ -2304,7 +2318,8 @@ fn load_workspace(
     let config = Config::from_value(config_value.clone())?;
     let registry = PackRegistry::load_with_config(packs_path, &config_value, &process_env)?;
     let desired = vmctl_planner::build_desired_state(config, &registry, target)?;
-    Ok((workspace, desired, registry))
+    let source_fingerprint = workspace_source_fingerprint(&config_path, packs_path)?;
+    Ok((workspace, desired, registry, source_fingerprint))
 }
 
 fn default_workspace() -> Result<Workspace> {
@@ -2319,6 +2334,48 @@ fn dry_run_workspace(workspace: &Workspace) -> Workspace {
         root: workspace.root.clone(),
         generated_dir: PathBuf::from("backend/generated/dry-run-workspace"),
     }
+}
+
+fn ensure_workspace_sources_fresh(
+    config_path: Option<&Path>,
+    packs_path: &Path,
+    expected_fingerprint: &str,
+) -> Result<()> {
+    let current_fingerprint = workspace_source_fingerprint(
+        &resolve_config_path(config_path)?.path,
+        packs_path,
+    )?;
+    if current_fingerprint != expected_fingerprint {
+        bail!(
+            "workspace sources changed during apply; rerun vmctl so generated artifacts are rebuilt"
+        );
+    }
+    Ok(())
+}
+
+fn workspace_source_fingerprint(config_path: &Path, packs_path: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    let config_bytes = std::fs::read(config_path)
+        .with_context(|| format!("failed to read {}", config_path.display()))?;
+    hasher.update(b"config\0");
+    hasher.update(config_path.to_string_lossy().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(&config_bytes);
+    hasher.update(b"\0");
+
+    let mut files = list_absolute_files(packs_path)?;
+    files.sort();
+    for path in files {
+        let rel = path.strip_prefix(packs_path).unwrap_or(&path);
+        let bytes =
+            std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+        hasher.update(rel.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
+        hasher.update(&bytes);
+        hasher.update(b"\0");
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn init_workspace(config_path: Option<&Path>, packs_path: &Path) -> Result<()> {
@@ -3399,6 +3456,39 @@ Interface: vmbr0
                 .timeout(Duration::from_secs(10)),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn workspace_source_fingerprint_changes_when_pack_source_changes() {
+        let root = unique_temp_dir();
+        std::fs::create_dir_all(root.join("packs/services")).unwrap();
+        std::fs::write(root.join("vmctl.toml"), "title = 'example'\n").unwrap();
+        std::fs::write(
+            root.join("packs/services/seerr.toml"),
+            "name = 'seerr'\n[settings]\ndefault_movie_quality_profile = 'Any'\n",
+        )
+        .unwrap();
+
+        let first = workspace_source_fingerprint(
+            &root.join("vmctl.toml"),
+            &root.join("packs"),
+        )
+        .unwrap();
+
+        std::fs::write(
+            root.join("packs/services/seerr.toml"),
+            "name = 'seerr'\n[settings]\ndefault_movie_quality_profile = 'HD - 720p/1080p'\n",
+        )
+        .unwrap();
+
+        let second = workspace_source_fingerprint(
+            &root.join("vmctl.toml"),
+            &root.join("packs"),
+        )
+        .unwrap();
+
+        assert_ne!(first, second);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn unique_temp_dir() -> PathBuf {

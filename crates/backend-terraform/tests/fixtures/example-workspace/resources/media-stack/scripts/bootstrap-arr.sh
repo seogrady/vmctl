@@ -393,6 +393,23 @@ def ensure_root_folder(url, api_key, path):
     request("POST", f"{url}/api/v3/rootfolder", api_key, {"path": path})
 
 
+def ensure_media_management(url, api_key):
+    payload = request("GET", f"{url}/api/v3/config/mediamanagement", api_key, allow=())
+    desired = {
+        "skipFreeSpaceCheckWhenImporting": False,
+        "minimumFreeSpaceWhenImporting": 100,
+        "copyUsingHardlinks": True,
+        "rescanAfterRefresh": "always",
+    }
+    changed = False
+    for key, value in desired.items():
+        if payload.get(key) != value:
+            payload[key] = value
+            changed = True
+    if changed:
+        request("PUT", f"{url}/api/v3/config/mediamanagement", api_key, payload, allow=())
+
+
 def remove_download_client(app, url, api_key, name):
     existing = request("GET", f"{url}/api/v3/downloadclient", api_key, allow=()) or []
     target = next((item for item in existing if item.get("name") == name), None)
@@ -727,6 +744,7 @@ for app, cfg in apps.items():
     root, discovered_base = detect_api_base(app, cfg["url"], key, "/api/v3", cfg["base"])
     api_url = f"{root}{discovered_base}"
     ensure_root_folder(api_url, key, cfg["root"])
+    ensure_media_management(api_url, key)
     if qbit["usable"]:
         ensure_qbittorrent_download_client(
             app,

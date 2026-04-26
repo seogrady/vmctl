@@ -76,6 +76,17 @@ def read_env() -> dict[str, str]:
 
 
 ENV = read_env()
+
+
+def service_enabled(name: str) -> bool:
+    services = {
+        item.strip()
+        for item in (ENV.get("MEDIA_SERVICES") or "").split(",")
+        if item.strip()
+    }
+    return name in services
+
+
 QBIT_URL = (ENV.get("QBITTORRENT_URL") or "http://localhost:8080").rstrip("/")
 QBIT_USERNAME = ENV.get("QBITTORRENT_USERNAME", "admin")
 QBIT_PASSWORD = ENV.get("QBITTORRENT_PASSWORD", "adminadmin")
@@ -427,7 +438,8 @@ def process_torrent_downloads(state):
         if float(torrent.get("progress") or 0.0) < 1.0 and int(torrent.get("amount_left") or 1) != 0:
             continue
 
-        content_path = Path(torrent.get("content_path") or torrent.get("save_path") or "")
+        raw_path = Path(torrent.get("content_path") or torrent.get("save_path") or "")
+        content_path = raw_path if raw_path.is_dir() else raw_path.parent
         if not content_path.exists() or not content_path.is_dir():
             continue
 
