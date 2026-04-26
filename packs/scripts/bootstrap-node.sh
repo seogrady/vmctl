@@ -3,10 +3,17 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+. /etc/os-release
+
 missing=()
 for package in ca-certificates curl cloud-guest-utils; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
 done
+
+if [[ "${ID:-}" == "ubuntu" ]]; then
+  kernel_extra_package="linux-modules-extra-$(uname -r)"
+  dpkg-query -W -f='${Status}' "$kernel_extra_package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$kernel_extra_package")
+fi
 
 if [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]]; then
   dpkg-query -W -f='${Status}' qemu-guest-agent 2>/dev/null | grep -q 'install ok installed' || missing+=(qemu-guest-agent)
@@ -15,6 +22,10 @@ fi
 if ((${#missing[@]} > 0)); then
   apt-get update
   apt-get install -y "${missing[@]}"
+fi
+
+if [[ "${ID:-}" == "ubuntu" ]]; then
+  systemctl enable --now ssh
 fi
 
 resize_root_filesystem() {

@@ -17,7 +17,7 @@ docker_compose() {
 }
 
 CONFIG_ROOT="${CONFIG_PATH:-/opt/media/config}"
-BASE_URL_VALUE=""
+BASE_URL_VALUE="${JELLYFIN_BASE_URL:-/jf}"
 JELLYFIN_NETWORK_XML="$CONFIG_ROOT/jellyfin/network.xml"
 JELLYFIN_ENCODING_XML="$CONFIG_ROOT/jellyfin/encoding.xml"
 mkdir -p "$(dirname "$JELLYFIN_NETWORK_XML")"
@@ -68,12 +68,49 @@ transcoding_temp_path = (os.environ.get("JELLYFIN_TRANSCODING_TEMP_PATH") or "/c
 hwaccel_type = (os.environ.get("JELLYFIN_HWACCEL_TYPE") or "qsv").strip()
 vaapi_device = (os.environ.get("JELLYFIN_HWACCEL_DEVICE") or "/dev/dri/renderD128").strip()
 enable_hardware_encoding = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_ENCODING") or "true").strip().lower() in {"1", "true", "yes", "on"}
-enable_tonemapping = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_TONEMAPPING") or "true").strip().lower() in {"1", "true", "yes", "on"}
+enable_tonemapping_raw = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_TONEMAPPING") or "auto").strip().lower()
 enable_vpp_tonemapping = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_VPP_TONEMAPPING") or "true").strip().lower() in {"1", "true", "yes", "on"}
 enable_10bit_hevc = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_10BIT_HEVC_DECODING") or "true").strip().lower() in {"1", "true", "yes", "on"}
 enable_10bit_vp9 = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_10BIT_VP9_DECODING") or "true").strip().lower() in {"1", "true", "yes", "on"}
 enable_low_power_h264 = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_INTEL_LOW_POWER_H264") or "true").strip().lower() in {"1", "true", "yes", "on"}
 enable_low_power_hevc = (os.environ.get("JELLYFIN_HWACCEL_ENABLE_INTEL_LOW_POWER_HEVC") or "true").strip().lower() in {"1", "true", "yes", "on"}
+
+def probe_opencl_support() -> bool:
+    # Jellyfin's Dolby Vision path needs OpenCL on this Intel stack. If the
+    # runtime is missing or broken, leave tonemapping off so playback does not
+    # hard-fail during FFmpeg device initialization.
+    import subprocess
+
+    try:
+        subprocess.run(
+            [
+                "/usr/lib/jellyfin-ffmpeg/ffmpeg",
+                "-v",
+                "error",
+                "-init_hw_device",
+                f"vaapi=va:{vaapi_device}",
+                "-init_hw_device",
+                "opencl=ocl@va",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=16x16:d=1",
+                "-f",
+                "null",
+                "-",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        return False
+
+if enable_tonemapping_raw in {"", "auto"}:
+    enable_tonemapping = probe_opencl_support()
+else:
+    enable_tonemapping = enable_tonemapping_raw in {"1", "true", "yes", "on"}
 
 root = None
 if os.path.exists(xml_path):
@@ -144,7 +181,13 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-base = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
+base_candidates = []
+for candidate in [
+    "http://127.0.0.1:8096",
+    (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/"),
+]:
+    if candidate not in base_candidates:
+        base_candidates.append(candidate)
 user = os.environ.get("JELLYFIN_ADMIN_USER") or "admin"
 password = os.environ.get("JELLYFIN_ADMIN_PASSWORD") or ""
 base_url = ""
@@ -336,14 +379,20 @@ def try_call(method, path, payload=None, token=None):
         return None
 
 
-for _ in range(90):
-    try:
-        call("GET", "/System/Info/Public")
-        break
-    except Exception:
-        time.sleep(2)
+base = None
+for candidate_base in base_candidates:
+    base = candidate_base
+    for _ in range(90):
+        try:
+            call("GET", "/System/Info/Public", allow=(200, 204, 302))
+            break
+        except Exception:
+            time.sleep(2)
+    else:
+        continue
+    break
 else:
-    raise RuntimeError(f"Jellyfin did not become ready at {base}")
+    raise RuntimeError(f"Jellyfin did not become ready at any of: {', '.join(base_candidates)}")
 
 try:
     call("POST", "/Startup/Configuration", {

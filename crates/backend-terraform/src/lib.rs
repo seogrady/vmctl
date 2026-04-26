@@ -2189,10 +2189,11 @@ mod tests {
         assert!(env.contains("QBITTORRENT_CATEGORY_TV_PATH=/data/torrents/tv"));
         assert!(env.contains("QBITTORRENT_CATEGORY_MOVIES_PATH=/data/torrents/movies"));
         assert!(env.contains("JELLYFIN_TRANSCODING_TEMP_PATH=/config/transcodes"));
+        assert!(env.contains("JELLYFIN_BASE_URL=/jf"));
         assert!(env.contains("JELLYFIN_HWACCEL_TYPE=qsv"));
         assert!(env.contains("JELLYFIN_HWACCEL_DEVICE=/dev/dri/renderD128"));
         assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_ENCODING=true"));
-        assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_TONEMAPPING=true"));
+        assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_TONEMAPPING=auto"));
         assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_VPP_TONEMAPPING=true"));
         assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_10BIT_HEVC_DECODING=true"));
         assert!(env.contains("JELLYFIN_HWACCEL_ENABLE_INTEL_LOW_POWER_H264=true"));
@@ -2451,9 +2452,18 @@ mod tests {
         assert!(generated_compose.contains("image: \"lscr.io/linuxserver/sabnzbd:latest\""));
         assert!(generated_compose.contains("init: true"));
         assert!(generated_compose.contains("group_add:"));
-        assert!(generated_compose.contains("- \"render\""));
+        assert!(generated_compose.contains("- 992"));
         assert!(generated_compose.contains("devices:"));
         assert!(generated_compose.contains("- \"/dev/dri:/dev/dri\""));
+        assert!(generated_compose.contains("/etc/OpenCL/vendors:/etc/OpenCL/vendors:ro"));
+        assert!(generated_compose.contains(
+            "/usr/lib/x86_64-linux-gnu/intel-opencl:/usr/lib/x86_64-linux-gnu/intel-opencl:ro"
+        ));
+        assert!(generated_compose.contains(
+            "/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:ro"
+        ));
+        assert!(generated_compose.contains("/lib/x86_64-linux-gnu/libigdgmm.so.12:/lib/x86_64-linux-gnu/libigdgmm.so.12:ro"));
+        assert!(generated_compose.contains("/usr/local/lib:/usr/local/lib:ro"));
         assert_file_fixture(
             &root.join("generated/resources/media-stack/caddyfile.media"),
             include_str!(

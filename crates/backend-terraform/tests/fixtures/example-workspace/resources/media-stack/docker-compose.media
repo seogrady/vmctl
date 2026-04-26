@@ -33,12 +33,17 @@ services:
     restart: unless-stopped
     network_mode: "host"
     group_add:
-      - "render"
+      - 992
     devices:
       - "/dev/dri:/dev/dri"
     volumes:
       - "${STORAGE_PATH}:/data"
       - "${CONFIG_PATH}/jellyfin:/config"
+      - "/etc/OpenCL/vendors:/etc/OpenCL/vendors:ro"
+      - "/usr/lib/x86_64-linux-gnu/intel-opencl:/usr/lib/x86_64-linux-gnu/intel-opencl:ro"
+      - "/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:ro"
+      - "/lib/x86_64-linux-gnu/libigdgmm.so.12:/lib/x86_64-linux-gnu/libigdgmm.so.12:ro"
+      - "/usr/local/lib:/usr/local/lib:ro"
   meilisearch:
     image: "getmeili/meilisearch:v1.9"
     env_file:

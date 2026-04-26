@@ -171,6 +171,12 @@ jellyfin_admin_password = "${JELLYFIN_ADMIN_PASSWORD}"
 ui_homepage_enabled = true
 ui_homepage_title = "Media Stack"
 
+[resources.features.intel_igpu]
+enabled = true
+# Let Jellyfin use the Intel iGPU for hardware decode/encode on the media VM.
+mapping = "intel-igpu"
+pci_device = "00:02.0"
+
 [resources.features.media_services.download_routing]
 prefer = "usenet"
 fallback = "torrent"

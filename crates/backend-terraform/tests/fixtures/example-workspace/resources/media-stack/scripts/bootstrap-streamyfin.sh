@@ -35,14 +35,23 @@ import urllib.error
 import urllib.request
 
 PLUGIN_ID = "1e9e5d386e6746158719e98a5c34f004"
-BASE_URL = (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/")
+base_candidates = []
+for candidate in [
+    "http://127.0.0.1:8096",
+    (os.environ.get("JELLYFIN_INTERNAL_URL") or "http://127.0.0.1:8096").rstrip("/"),
+]:
+    if candidate not in base_candidates:
+        base_candidates.append(candidate)
+BASE_PATH = (os.environ.get("JELLYFIN_BASE_URL") or "").strip().rstrip("/")
+if BASE_PATH == "/":
+    BASE_PATH = ""
 ADMIN_USER = os.environ.get("JELLYFIN_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("JELLYFIN_ADMIN_PASSWORD", "")
 SEERR_URL = (os.environ.get("SEERR_INTERNAL_URL") or "http://seerr:5055").rstrip("/")
 
 
 def request_json(method: str, path: str, payload=None, token=None, allow=(200, 204)):
-    url = f"{BASE_URL}{path}"
+    url = f"{BASE_URL}{BASE_PATH}{path}"
     body = None
     headers = {
         "Content-Type": "application/json",
@@ -63,14 +72,20 @@ def request_json(method: str, path: str, payload=None, token=None, allow=(200, 2
         raise
 
 
-for _ in range(120):
-    try:
-        request_json("GET", "/System/Info/Public", allow=())
+BASE_URL = None
+for candidate_base in base_candidates:
+    BASE_URL = candidate_base
+    for _ in range(120):
+        try:
+        request_json("GET", "/System/Info/Public", allow=(200, 204, 302))
         break
-    except Exception:
-        time.sleep(2)
+        except Exception:
+            time.sleep(2)
+    else:
+        continue
+    break
 else:
-    raise RuntimeError(f"jellyfin did not become ready at {BASE_URL}")
+    raise RuntimeError(f"jellyfin did not become ready at any of: {', '.join(base_candidates)}")
 
 auth = request_json(
     "POST",

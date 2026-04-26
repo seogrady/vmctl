@@ -1,6 +1,6 @@
 name = "jellyfin"
 container_type = "docker"
-group_add = ["render"]
+group_add = ["992"]
 devices = ["/dev/dri:/dev/dri"]
 
 [image]
@@ -11,7 +11,15 @@ tag = "latest"
 network_mode = "host"
 
 [volumes]
-mounts = ["${STORAGE_PATH}:/data", "${CONFIG_PATH}/jellyfin:/config"]
+mounts = [
+  "${STORAGE_PATH}:/data",
+  "${CONFIG_PATH}/jellyfin:/config",
+  "/etc/OpenCL/vendors:/etc/OpenCL/vendors:ro",
+  "/usr/lib/x86_64-linux-gnu/intel-opencl:/usr/lib/x86_64-linux-gnu/intel-opencl:ro",
+  "/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:ro",
+  "/lib/x86_64-linux-gnu/libigdgmm.so.12:/lib/x86_64-linux-gnu/libigdgmm.so.12:ro",
+  "/usr/local/lib:/usr/local/lib:ro",
+]
 
 [ui]
 enabled = true
