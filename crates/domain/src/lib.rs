@@ -18,6 +18,21 @@ pub struct BackendConfig {
     pub settings: BTreeMap<String, Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    #[serde(default = "default_runtime_engine")]
+    pub engine: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServiceSelection {
+    Enabled(bool),
+    Config(BTreeMap<String, Value>),
+    #[default]
+    Disabled,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resource {
     pub name: String,
@@ -112,19 +127,72 @@ pub struct Expansion {
     pub files: Vec<String>,
     pub service_defs: Vec<String>,
     pub bootstrap_steps: Vec<String>,
+    #[serde(default)]
+    pub validation_steps: Vec<String>,
     pub dependencies: Vec<String>,
     pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServiceExecutionPlan {
+    pub instances: Vec<ServiceInstancePlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServiceInstancePlan {
+    pub key: String,
+    pub service: String,
+    pub version: String,
+    pub scope: String,
+    pub target: Option<String>,
+    pub required_dependencies: Vec<String>,
+    pub optional_dependencies: Vec<String>,
+    pub services: Vec<String>,
+    pub templates: Vec<ServiceTemplatePlan>,
+    #[serde(default)]
+    pub provision_scripts: Vec<String>,
+    #[serde(default)]
+    pub validation_scripts: Vec<String>,
+    pub runtime_requirements: Vec<String>,
+    pub outputs: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceTemplatePlan {
+    pub src: String,
+    pub dst: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesiredState {
     pub backend: BackendConfig,
     #[serde(default)]
+    pub runtime: RuntimeConfig,
+    #[serde(default)]
+    pub services: BTreeMap<String, ServiceSelection>,
+    #[serde(default)]
+    pub service_plan: ServiceExecutionPlan,
+    #[serde(default)]
     pub images: BTreeMap<String, ResolvedImage>,
     pub resources: Vec<Resource>,
     #[serde(default)]
     pub normalized_resources: BTreeMap<String, NormalizedResource>,
     pub expansions: BTreeMap<String, Expansion>,
+}
+
+impl Default for DesiredState {
+    fn default() -> Self {
+        Self {
+            backend: BackendConfig::default(),
+            runtime: RuntimeConfig::default(),
+            services: BTreeMap::new(),
+            service_plan: ServiceExecutionPlan::default(),
+            images: BTreeMap::new(),
+            resources: Vec::new(),
+            normalized_resources: BTreeMap::new(),
+            expansions: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,11 +256,40 @@ fn default_backend_kind() -> String {
     "tofu".to_string()
 }
 
+fn default_runtime_engine() -> String {
+    "docker".to_string()
+}
+
 impl Default for BackendConfig {
     fn default() -> Self {
         Self {
             kind: default_backend_kind(),
             settings: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            engine: default_runtime_engine(),
+        }
+    }
+}
+
+impl ServiceSelection {
+    pub fn enabled(&self) -> bool {
+        match self {
+            ServiceSelection::Enabled(enabled) => *enabled,
+            ServiceSelection::Config(_) => true,
+            ServiceSelection::Disabled => false,
+        }
+    }
+
+    pub fn overrides(&self) -> BTreeMap<String, Value> {
+        match self {
+            ServiceSelection::Config(values) => values.clone(),
+            ServiceSelection::Enabled(_) | ServiceSelection::Disabled => BTreeMap::new(),
         }
     }
 }

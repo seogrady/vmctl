@@ -27,5 +27,20 @@ pub fn render_plan(desired: &DesiredState) -> String {
             }
         }
     }
+    if !desired.service_plan.instances.is_empty() {
+        output.push_str("services\n");
+        for instance in &desired.service_plan.instances {
+            output.push_str(&format!(
+                "- {} {} ({})\n",
+                instance.scope, instance.service, instance.version
+            ));
+            if !instance.required_dependencies.is_empty() {
+                output.push_str(&format!(
+                    "  requires: {}\n",
+                    instance.required_dependencies.join(", ")
+                ));
+            }
+        }
+    }
     output
 }

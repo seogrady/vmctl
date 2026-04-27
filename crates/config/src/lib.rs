@@ -4,12 +4,18 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use toml::Value;
-use vmctl_domain::{BackendConfig, ImageConfig, ImageKind, ImageSource, Resource};
+use vmctl_domain::{
+    BackendConfig, ImageConfig, ImageKind, ImageSource, Resource, RuntimeConfig, ServiceSelection,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub backend: BackendConfig,
+    #[serde(default)]
+    pub runtime: RuntimeConfig,
+    #[serde(default)]
+    pub services: BTreeMap<String, ServiceSelection>,
     #[serde(default)]
     pub defaults: BTreeMap<String, Value>,
     #[serde(default)]
@@ -109,6 +115,17 @@ impl Config {
             }
         }
         self.validate_images()?;
+        self.validate_runtime()?;
+        Ok(())
+    }
+
+    fn validate_runtime(&self) -> Result<()> {
+        if !matches!(self.runtime.engine.as_str(), "docker" | "podman") {
+            bail!(
+                "runtime.engine must be `docker` or `podman`, got `{}`",
+                self.runtime.engine
+            );
+        }
         Ok(())
     }
 

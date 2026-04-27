@@ -1,0 +1,83 @@
+name = "media-stack"
+kind = "vm"
+image = "ubuntu_24_cloud_image"
+role = "media_stack"
+vmid = 210
+cores = 8
+memory = 12288
+disk_gb = 200
+disk_interface = "scsi0"
+scsi_hardware = "virtio-scsi-single"
+iothread = false
+description = "Media stack VM managed by vmctl"
+depends_on = ["tailscale-gateway"]
+
+[network]
+mode = "dhcp"
+
+[cloud_init]
+user = "ubuntu"
+ssh_key_file = "${env.DEFAULT_SSH_KEY_FILE}"
+
+[provision]
+user = "ubuntu"
+private_key_file = "${env.DEFAULT_SSH_PRIVATE_KEY_FILE}"
+
+[features.docker]
+enabled = true
+
+[features.tailscale]
+enabled = true
+mode = "client"
+auth_key = "${env.TAILSCALE_AUTH_KEY}"
+tags = ["tag:homelab"]
+
+[features.media_services]
+enabled = true
+minimal = true
+services = ["caddy", "gluetun", "jellio-shim", "jellyfin", "meilisearch", "jellysearch", "recyclarr", "sabnzbd", "autobrr", "sonarr", "radarr", "prowlarr", "flaresolverr", "qbittorrent-vpn", "seerr", "bazarr", "jellystat-db", "jellystat"]
+jellyfin_url = "http://media-stack:8096"
+jellyfin_admin_user = "${env.JELLYFIN_ADMIN_USER}"
+jellyfin_admin_password = "${env.JELLYFIN_ADMIN_PASSWORD}"
+ui_homepage_enabled = true
+ui_homepage_title = "Media Stack"
+
+[features.intel_igpu]
+enabled = true
+mapping = "intel-igpu"
+pci_device = "00:02.0"
+
+[features.media_services.download_routing]
+prefer = "usenet"
+fallback = "torrent"
+require_client = true
+
+[features.media_services.exposure]
+tailscale_https_enabled = true
+tailscale_https_target = "http://127.0.0.1:80"
+
+[features.storage]
+path = "/data"
+
+[features.vpn]
+enabled = true
+provider = "mullvad"
+type = "wireguard"
+wireguard_private_key = "${env.WIREGUARD_PRIVATE_KEY}"
+wireguard_addresses = "${env.WIREGUARD_ADDRESSES}"
+server_cities = "${env.VPN_SERVER_CITIES}"
+
+[defaults]
+requires = ["docker"]
+
+[render]
+templates = ["docker-compose.media.hbs", "media.env.hbs", "media-index.html.hbs", "tailscale-setup.sh.hbs"]
+
+[scripts]
+provision = [
+  "bootstrap-node.sh",
+  "bootstrap-tailscale.sh",
+  "bootstrap-media.sh",
+  "bootstrap-arr.sh",
+  "bootstrap-download-unpack.sh",
+]

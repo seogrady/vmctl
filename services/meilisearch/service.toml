@@ -1,0 +1,28 @@
+name = "meilisearch"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "persistent-volume"]
+services = ["meilisearch"]
+
+[container]
+container_type = "docker"
+
+[image]
+name = "getmeili/meilisearch"
+tag = "v1.9"
+
+[ports]
+published = ["7700:7700"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/meilisearch:/meili_data"]
+
+[environment]
+MEILI_MASTER_KEY = "${MEILI_MASTER_KEY}"

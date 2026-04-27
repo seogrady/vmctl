@@ -9,7 +9,8 @@ use vmctl_backend::{
     TargetSelector,
 };
 use vmctl_domain::{DesiredState, ImageSource, NormalizedResource, Resource, Workspace};
-use vmctl_packs::PackRegistry;
+use vmctl_resources::ResourceRegistry;
+use vmctl_services::ServiceRegistry;
 use vmctl_util::command_runner::{self, CommandOptions, LogPrefix};
 
 #[derive(Debug, Default)]
@@ -20,7 +21,7 @@ impl TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
         mode: PlanMode,
     ) -> Result<RenderResult> {
         render_workspace(workspace, desired, registry, mode == PlanMode::Online)
@@ -30,7 +31,7 @@ impl TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
         verbose: bool,
     ) -> Result<ApplyResult> {
         self.apply_with_output_refresh(workspace, desired, registry, verbose, true)
@@ -40,7 +41,7 @@ impl TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
         verbose: bool,
         refresh: bool,
     ) -> Result<ApplyResult> {
@@ -51,7 +52,7 @@ impl TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
         verbose: bool,
         refresh: bool,
         target: Option<&str>,
@@ -99,7 +100,7 @@ impl EngineBackend for TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
     ) -> Result<RenderResult> {
         render_workspace(workspace, desired, registry, true)
     }
@@ -144,7 +145,7 @@ impl EngineBackend for TerraformBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
     ) -> Result<ApplyResult> {
         self.apply_with_output(workspace, desired, registry, false)
     }
@@ -171,7 +172,7 @@ impl EngineBackend for TerraformBackend {
 fn render_workspace(
     workspace: &Workspace,
     desired: &DesiredState,
-    registry: &PackRegistry,
+    registry: &ResourceRegistry,
     include_proxmox_resources: bool,
 ) -> Result<RenderResult> {
     if include_proxmox_resources {
@@ -191,6 +192,9 @@ fn render_workspace(
         &generated.join("terraform.tfvars.json"),
         &redacted_value(json!({
             "backend": desired.backend,
+            "runtime": desired.runtime,
+            "services": desired.services,
+            "service_plan": desired.service_plan,
             "resources": desired.resources,
             "normalized_resources": desired.normalized_resources,
             "expansions": desired.expansions,
@@ -229,6 +233,17 @@ fn render_workspace(
     files.extend(write_base_modules(&generated, include_proxmox_resources)?);
 
     files.extend(registry.render_artifacts(&generated, &desired.resources, &desired.expansions)?);
+    let workspace_services = workspace.root.join("services");
+    let services_root = if workspace_services.exists() {
+        workspace_services
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("services")
+    };
+    let service_registry = ServiceRegistry::load(&services_root)?;
+    files.extend(service_registry.render_artifacts(&generated, &desired.service_plan)?);
+    files.extend(service_registry.render_resource_artifacts(&generated, &desired.service_plan)?);
 
     Ok(RenderResult {
         summary: format!("rendered {} files to {}", files.len(), generated.display()),
@@ -246,7 +261,8 @@ fn prepare_generated_workspace(generated: &Path) -> Result<()> {
         "main.tf.json",
         "outputs.tf.json",
         "DRY_RUN_VALIDATION_ONLY.txt",
-        "modules",
+        "services",
+        "service-artifacts",
         "resources",
     ] {
         let path = generated.join(relative);
@@ -430,13 +446,25 @@ fn variables_json() -> serde_json::Value {
                 "type": "any",
                 "description": "Resolved vmctl backend configuration."
             },
+            "runtime": {
+                "type": "any",
+                "description": "Resolved vmctl container runtime configuration."
+            },
+            "services": {
+                "type": "any",
+                "description": "Enabled vmctl module selections and overrides."
+            },
+            "service_plan": {
+                "type": "any",
+                "description": "Resolved vmctl module execution plan."
+            },
             "resources": {
                 "type": "any",
                 "description": "Normalized vmctl resources."
             },
             "expansions": {
                 "type": "any",
-                "description": "Expanded pack outputs keyed by resource name."
+                "description": "Expanded resource outputs keyed by resource name."
             },
             "normalized_resources": {
                 "type": "any",
@@ -488,9 +516,9 @@ fn provider_json(desired: &DesiredState) -> serde_json::Value {
 }
 
 fn main_json(desired: &DesiredState, include_proxmox_resources: bool) -> serde_json::Value {
-    let mut modules = Map::new();
+    let mut services = Map::new();
     for resource in &desired.resources {
-        modules.insert(module_name(resource), module_json(resource, desired));
+        services.insert(module_name(resource), module_json(resource, desired));
     }
 
     let mut root = Map::new();
@@ -512,7 +540,7 @@ fn main_json(desired: &DesiredState, include_proxmox_resources: bool) -> serde_j
             "vmctl_resource_names": "${[for resource in var.resources : resource.name]}",
             "vmctl_resource_count": "${length(var.resources)}"
         },
-        "module": modules
+        "module": services
     });
     if !root.is_empty() {
         document["resource"] = Value::Object(root);
@@ -605,7 +633,7 @@ fn module_json(resource: &Resource, desired: &DesiredState) -> Value {
     let mut module = Map::new();
     module.insert(
         "source".to_string(),
-        Value::String(format!("./modules/{}", resource.kind)),
+        Value::String(format!("./services/{}", resource.kind)),
     );
     module.insert(
         "resource".to_string(),
@@ -837,7 +865,7 @@ fn image_cached_locally(image: &vmctl_domain::ResolvedImage) -> bool {
 }
 
 fn write_base_modules(generated: &Path, include_proxmox_resources: bool) -> Result<Vec<PathBuf>> {
-    let modules_dir = generated.join("modules");
+    let modules_dir = generated.join("services");
     let mut files = Vec::new();
     for kind in ["vm", "lxc"] {
         let module_dir = modules_dir.join(kind);
@@ -1305,7 +1333,7 @@ mod tests {
         std::fs::write(generated_dir.join("terraform.tfstate"), "{}").unwrap();
         std::fs::write(generated_dir.join(".terraform.lock.hcl"), "# lock").unwrap();
         std::fs::write(generated_dir.join("main.tf.json"), "{}").unwrap();
-        std::fs::create_dir_all(generated_dir.join("modules/stale")).unwrap();
+        std::fs::create_dir_all(generated_dir.join("services/stale")).unwrap();
 
         prepare_generated_workspace(&generated_dir).unwrap();
 
@@ -1313,7 +1341,7 @@ mod tests {
         assert!(generated_dir.join(".terraform.lock.hcl").is_file());
         assert!(generated_dir.join(".terraform").is_dir());
         assert!(!generated_dir.join("main.tf.json").exists());
-        assert!(!generated_dir.join("modules").exists());
+        assert!(!generated_dir.join("services").exists());
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1360,18 +1388,19 @@ mod tests {
             ],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let rendered = main_json(&desired, true);
-        let modules = rendered.get("module").and_then(Value::as_object).unwrap();
+        let services = rendered.get("module").and_then(Value::as_object).unwrap();
 
-        assert_eq!(modules["gateway"]["source"], "./modules/lxc");
-        assert_eq!(modules["media_stack"]["source"], "./modules/vm");
-        assert_eq!(modules["media_stack"]["depends_on"][0], "module.gateway");
+        assert_eq!(services["gateway"]["source"], "./services/lxc");
+        assert_eq!(services["media_stack"]["source"], "./services/vm");
+        assert_eq!(services["media_stack"]["depends_on"][0], "module.gateway");
     }
 
     #[test]
-    fn renders_provider_and_module_inputs() {
+    fn renders_provider_and_service_inputs() {
         let desired = DesiredState {
             backend: BackendConfig {
                 kind: "terraform".to_string(),
@@ -1434,6 +1463,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let provider = provider_json(&desired);
@@ -1497,6 +1527,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let rendered = main_json(&desired, true);
@@ -1564,6 +1595,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let rendered = main_json(&desired, true);
@@ -1693,13 +1725,15 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         TerraformBackend
-            .render(&workspace, &desired, &PackRegistry::default())
+            .render(&workspace, &desired, &ResourceRegistry::default())
             .unwrap();
 
-        let main = std::fs::read_to_string(root.join("generated/modules/vm/main.tf.json")).unwrap();
+        let main =
+            std::fs::read_to_string(root.join("generated/services/vm/main.tf.json")).unwrap();
         let provider = std::fs::read_to_string(root.join("generated/provider.tf.json")).unwrap();
         let state = std::fs::read_to_string(root.join("generated/desired-state.json")).unwrap();
 
@@ -1752,6 +1786,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let err = validate_live_inputs(&desired).unwrap_err();
@@ -1803,6 +1838,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let err = validate_live_inputs(&desired).unwrap_err();
@@ -1856,7 +1892,9 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-jellyfin.sh"
         );
-        assert!(script.contains("ensure_library(name, path, collection_type, token, admin_user_id)"));
+        assert!(
+            script.contains("ensure_library(name, path, collection_type, token, admin_user_id)")
+        );
         assert!(script.contains("desired_path = path.rstrip(\"/\")"));
         assert!(script.contains("/Library/VirtualFolders/Paths?name="));
         assert!(script.contains("DELETE"));
@@ -1942,7 +1980,7 @@ mod tests {
         let script = include_str!(
             "../tests/fixtures/example-workspace/resources/media-stack/scripts/bootstrap-seerr.sh"
         );
-        let seerr_pack = include_str!("../../../packs/services/seerr.toml");
+        let seerr_service = include_str!("../../../services/seerr/service.toml");
         assert!(script.contains("settings[\"public\"][\"initialized\"] = True"));
         assert!(script.contains("settings[\"public\"][\"mediaServerLogin\"] = True"));
         assert!(script.contains("settings[\"main\"][\"mediaServerLogin\"] = True"));
@@ -1960,7 +1998,7 @@ mod tests {
         assert!(script.contains("build_external_url("));
         assert!(script.contains("\"externalHostname\""));
         assert!(script.contains("seerr failed to finish initialization bootstrap"));
-        assert!(seerr_pack.contains("default_movie_quality_profile = \"HD - 720p/1080p\""));
+        assert!(seerr_service.contains("default_movie_quality_profile = \"HD - 720p/1080p\""));
     }
 
     #[test]
@@ -1978,7 +2016,8 @@ mod tests {
         assert!(script.contains("category_field = \"movieCategory\""));
         assert!(script.contains("\"priority\": 2"));
         assert!(script.contains("qBittorrent download client did not converge"));
-        assert!(script.contains("request(\"GET\", f\"{url}/api/v3/downloadclient\", api_key, allow=())"));
+        assert!(script
+            .contains("request(\"GET\", f\"{url}/api/v3/downloadclient\", api_key, allow=())"));
         assert!(script.contains("request(\"PUT\", f\"{url}/api/v3/downloadclient/{item['id']}\""));
         assert!(script.contains("ensure_media_management"));
         assert!(script.contains("/api/v3/config/mediamanagement"));
@@ -2000,7 +2039,8 @@ mod tests {
         assert!(script.contains(
             "existing_names = {item.get(\"name\") for item in existing if item.get(\"name\")}"
         ));
-        assert!(script.contains("ensure_default_indexers(prowlarr_api, prowlarr_key, allowed_protocols)"));
+        assert!(script
+            .contains("ensure_default_indexers(prowlarr_api, prowlarr_key, allowed_protocols)"));
         assert!(script.contains("QBITTORRENT_CATEGORY_TV"));
         assert!(script.contains("QBITTORRENT_CATEGORY_MOVIES"));
         assert!(script.contains("SONARR_PROWLARR_CATEGORIES"));
@@ -2065,9 +2105,13 @@ mod tests {
         assert!(script.contains("compatibility_report"));
         assert!(script.contains("ffprobe"));
         assert!(script.contains("raw_path = Path"));
-        assert!(script.contains("content_path = raw_path if raw_path.is_dir() else raw_path.parent"));
+        assert!(
+            script.contains("content_path = raw_path if raw_path.is_dir() else raw_path.parent")
+        );
         assert!(script.contains("existing = state.get(torrent_id, {})"));
-        assert!(script.contains("existing.get(\"imported\") and existing.get(\"path\") == str(content_path)"));
+        assert!(script.contains(
+            "existing.get(\"imported\") and existing.get(\"path\") == str(content_path)"
+        ));
         assert!(script.contains("missing english audio track"));
         assert!(script.contains("MoviesSearch"));
         assert!(script.contains("SeriesSearch"));
@@ -2093,11 +2137,25 @@ mod tests {
         assert!(script.contains("cleanup_stale_state"));
         assert!(script.contains("stale-state.json"));
         assert!(script.contains("--dry-run"));
+        assert!(script.contains("--prune-orphans"));
+        assert!(script.contains("--include-seeding"));
+        assert!(script.contains("--restore-torrents"));
         assert!(script.contains("resolve_env_file"));
         assert!(script.contains("backend/generated/workspace/resources/media-stack/media.env"));
         assert!(script.contains("VMCTL_MEDIA_ENV_FILE"));
+        assert!(script.contains("VMCTL_MEDIA_STACK_DIR"));
+        assert!(script.contains("SONARR_URL"));
+        assert!(script.contains("RADARR_URL"));
+        assert!(script.contains("python3 - \"$@\" <<'PY'"));
         assert!(script.contains("jellyfin_refresh"));
         assert!(script.contains("compatibility-summary.json"));
+        assert!(script.contains("DownloadedMoviesScan"));
+        assert!(script.contains("DownloadedEpisodesScan"));
+        assert!(script.contains("qbit_login"));
+        assert!(script.contains("prune_arr_orphans"));
+        assert!(script.contains("restore_torrents"));
+        assert!(script.contains("resolve_base_url"));
+        assert!(script.contains("compose_container_ip"));
     }
 
     #[test]
@@ -2132,7 +2190,7 @@ mod tests {
         assert!(!caddy.contains("/jellio-lan/"));
         assert!(!caddy.contains("/jellio-lan-ip/"));
         assert!(!caddy.contains("/jellio-lan-short/"));
-        assert!(caddy.contains("handle_path /jf/*"));
+        assert!(caddy.contains("handle /jf/*"));
         assert!(caddy.contains("handle /Items/*"));
         assert!(caddy.contains("handle /items/*"));
         assert!(caddy.contains("@tizen_stream"));
@@ -2144,8 +2202,8 @@ mod tests {
         assert!(caddy.contains("path_regexp jf_stream ^/jf/[Vv]ideos/([^/]+)/stream$"));
         assert!(caddy.contains("path_regexp jellyfin_stream ^/[Vv]ideos/([^/]+)/stream$"));
         assert!(caddy.contains("rewrite * /Videos/{re.tizen_stream.1}/master.m3u8"));
-        assert!(caddy.contains("rewrite * /Videos/{re.tizen_jf_stream.1}/master.m3u8"));
-        assert!(caddy.contains("rewrite * /Videos/{re.jf_stream.1}/master.m3u8"));
+        assert!(caddy.contains("rewrite * /jf/Videos/{re.tizen_jf_stream.1}/master.m3u8"));
+        assert!(caddy.contains("rewrite * /jf/Videos/{re.jf_stream.1}/master.m3u8"));
         assert!(caddy.contains("rewrite * /Videos/{re.jellyfin_stream.1}/master.m3u8"));
         assert!(caddy.contains("header_up Accept-Encoding identity"));
         assert!(caddy.contains("handle /Videos/*"));
@@ -2204,8 +2262,12 @@ mod tests {
         assert!(env.contains("AUTOBRR_CUSTOM_DEFINITIONS=/config/definitions"));
         assert!(env.contains("PROWLARR_FLARESOLVERR_URL=http://flaresolverr:8191"));
         assert!(env.contains("RADARR_DEFAULT_QUALITY_PROFILE=\"HD - 720p/1080p\""));
-        assert!(env.contains("DOWNLOAD_ROUTING_PREFER={{features.media_services.download_routing.prefer}}"));
-        assert!(env.contains("DOWNLOAD_ROUTING_FALLBACK={{features.media_services.download_routing.fallback}}"));
+        assert!(env.contains(
+            "DOWNLOAD_ROUTING_PREFER={{features.media_services.download_routing.prefer}}"
+        ));
+        assert!(env.contains(
+            "DOWNLOAD_ROUTING_FALLBACK={{features.media_services.download_routing.fallback}}"
+        ));
         assert!(env.contains("DOWNLOAD_ROUTING_REQUIRE_CLIENT={{features.media_services.download_routing.require_client}}"));
         assert!(env.contains("PROWLARR_BOOTSTRAP_INDEXERS_TORRENT=\"LimeTorrents,Nyaa.si,showRSS,The Pirate Bay,YTS\""));
         assert!(env.contains("PROWLARR_BOOTSTRAP_INDEXERS_USENET=\"NZBFinder,NZBGeek,NinjaCentral,DrunkenSlug,Usenet Crawler,altHUB,SceneNZB\""));
@@ -2225,7 +2287,7 @@ mod tests {
 
     #[test]
     fn media_env_template_uses_seerr_service_setting_for_radarr_profile() {
-        let template = include_str!("../../../packs/templates/media.env.hbs");
+        let template = include_str!("../../../resources/media-stack/templates/media.env.hbs");
         assert!(template.contains(
             "RADARR_DEFAULT_QUALITY_PROFILE=\"{{service_settings.seerr.settings.default_movie_quality_profile}}\""
         ));
@@ -2297,13 +2359,16 @@ mod tests {
         assert!(!index.contains("jellio-manifest.lan.url"));
         assert!(!index.contains("jellio-manifest.lan-ip.url"));
         assert!(!index.contains("jellio-manifest.lan-short.url"));
-        assert!(index
-            .contains("wire(\"jellio-manifest-tailscale-link\", \"/jellio-manifest.tailscale.url\");"));
+        assert!(index.contains(
+            "wire(\"jellio-manifest-tailscale-link\", \"/jellio-manifest.tailscale.url\");"
+        ));
         assert!(index.contains(
             "wire(\"jellio-manifest-cloudflare-link\", \"/jellio-manifest.cloudflare.url\");"
         ));
         assert!(index.contains("compatibility-summary-link"));
-        assert!(index.contains("wire(\"compatibility-summary-link\", \"/compatibility-summary.txt\");"));
+        assert!(
+            index.contains("wire(\"compatibility-summary-link\", \"/compatibility-summary.txt\");")
+        );
         assert!(index.contains("Local storage warning"));
         assert!(index.contains("storage-health.json"));
         assert!(index.contains("Generated artifact warning"));
@@ -2326,7 +2391,7 @@ mod tests {
 
     #[test]
     fn media_autobrr_service_definition_exposes_the_expected_ui_and_env() {
-        let service = include_str!("../../../packs/services/autobrr.toml");
+        let service = include_str!("../../../services/autobrr/service.toml");
         assert!(service.contains("name = \"autobrr\""));
         assert!(service.contains("name = \"ghcr.io/autobrr/autobrr\""));
         assert!(service.contains("tag = \"latest\""));
@@ -2338,7 +2403,7 @@ mod tests {
 
     #[test]
     fn media_flaresolverr_service_definition_is_internal_only() {
-        let service = include_str!("../../../packs/services/flaresolverr.toml");
+        let service = include_str!("../../../services/flaresolverr/service.toml");
         assert!(service.contains("name = \"flaresolverr\""));
         assert!(service.contains("name = \"ghcr.io/flaresolverr/flaresolverr\""));
         assert!(service.contains("tag = \"v3.4.6\""));
@@ -2348,7 +2413,7 @@ mod tests {
 
     #[test]
     fn media_prowlarr_service_definition_seeds_indexers_explicitly() {
-        let service = include_str!("../../../packs/services/prowlarr.toml");
+        let service = include_str!("../../../services/prowlarr/service.toml");
         assert!(service.contains("seed_indexers_torrent = [\"LimeTorrents\", \"Nyaa.si\", \"showRSS\", \"The Pirate Bay\", \"YTS\"]"));
         assert!(service.contains("seed_indexers_usenet = [\"NZBFinder\", \"NZBGeek\", \"NinjaCentral\", \"DrunkenSlug\", \"Usenet Crawler\", \"altHUB\", \"SceneNZB\"]"));
     }
@@ -2406,10 +2471,21 @@ mod tests {
         ]);
         let config_value = vmctl_config::resolve_toml_value(raw.parse().unwrap(), &env).unwrap();
         let config = vmctl_config::Config::from_value(config_value.clone()).unwrap();
-        let registry =
-            PackRegistry::load_with_config(&workspace_root.join("packs"), &config_value, &env)
-                .unwrap();
-        let desired = vmctl_planner::build_desired_state(config, &registry, None).unwrap();
+        let registry = ResourceRegistry::load_with_config(
+            &workspace_root.join("resources"),
+            &workspace_root.join("services"),
+            &config_value,
+            &env,
+        )
+        .unwrap();
+        let service_registry = ServiceRegistry::load(&workspace_root.join("services")).unwrap();
+        let desired = vmctl_planner::build_desired_state_with_services(
+            config,
+            &registry,
+            &service_registry,
+            None,
+        )
+        .unwrap();
         let root = unique_temp_dir();
         std::fs::create_dir_all(&root).unwrap();
         let workspace = Workspace {
@@ -2462,7 +2538,9 @@ mod tests {
         assert!(generated_compose.contains(
             "/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:/usr/lib/x86_64-linux-gnu/libocloc_legacy1.so:ro"
         ));
-        assert!(generated_compose.contains("/lib/x86_64-linux-gnu/libigdgmm.so.12:/lib/x86_64-linux-gnu/libigdgmm.so.12:ro"));
+        assert!(generated_compose.contains(
+            "/lib/x86_64-linux-gnu/libigdgmm.so.12:/lib/x86_64-linux-gnu/libigdgmm.so.12:ro"
+        ));
         assert!(generated_compose.contains("/usr/local/lib:/usr/local/lib:ro"));
         assert_file_fixture(
             &root.join("generated/resources/media-stack/caddyfile.media"),

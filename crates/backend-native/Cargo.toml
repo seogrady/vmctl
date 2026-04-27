@@ -7,5 +7,5 @@ edition.workspace = true
 anyhow.workspace = true
 vmctl-backend.workspace = true
 vmctl-domain.workspace = true
-vmctl-packs.workspace = true
+vmctl-resources.workspace = true
 

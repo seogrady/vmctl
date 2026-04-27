@@ -263,6 +263,7 @@ mod tests {
             resources: vec![Resource {
                 name: "media-stack".to_string(),
                 kind: "vm".to_string(),
+                enabled: true,
                 image: None,
                 role: None,
                 vmid: Some(210),
@@ -272,6 +273,7 @@ mod tests {
             }],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
         let lockfile = Lockfile {
             version: 1,

@@ -1,0 +1,32 @@
+name = "qbittorrent"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "media-storage"]
+services = ["qbittorrent"]
+
+[container]
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/qbittorrent"
+tag = "latest"
+
+[ports]
+published = ["8080:8080", "6881:6881", "6881:6881/udp"]
+
+[volumes]
+mounts = ["${STORAGE_PATH}:/data", "${CONFIG_PATH}/qbittorrent:/config"]
+
+[ui]
+enabled = true
+port = 8080
+path = "/"
+name = "qBittorrent"
+description = "Torrent client"

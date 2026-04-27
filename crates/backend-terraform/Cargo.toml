@@ -10,7 +10,8 @@ serde_json.workspace = true
 toml.workspace = true
 vmctl-backend.workspace = true
 vmctl-domain.workspace = true
-vmctl-packs.workspace = true
+vmctl-services.workspace = true
+vmctl-resources.workspace = true
 vmctl-util.workspace = true
 
 [dev-dependencies]

@@ -6,14 +6,27 @@ use vmctl_domain::{
     CloudInitConfig, DesiredState, ImageConfig, ImageKind, NetworkConfig, NormalizedResource,
     ProvisionConfig, ResolvedImage, Resource,
 };
-use vmctl_packs::PackRegistry;
+use vmctl_resources::ResourceRegistry;
+use vmctl_services::ServiceRegistry;
 
 pub fn build_desired_state(
     config: Config,
-    registry: &PackRegistry,
+    registry: &ResourceRegistry,
+    target: Option<&str>,
+) -> Result<DesiredState> {
+    build_desired_state_with_services(config, registry, &ServiceRegistry::default(), target)
+}
+
+pub fn build_desired_state_with_services(
+    mut config: Config,
+    registry: &ResourceRegistry,
+    service_registry: &ServiceRegistry,
     target: Option<&str>,
 ) -> Result<DesiredState> {
     let images = resolve_images(&config)?;
+    config
+        .resources
+        .extend(registry.resources().iter().cloned());
     let resources = config
         .resources
         .into_iter()
@@ -22,7 +35,7 @@ pub fn build_desired_state(
         .collect::<Vec<_>>();
     let resources = select_resources(resources, target)?;
 
-    let expansions = resources
+    let mut expansions = resources
         .iter()
         .map(|resource| {
             registry
@@ -41,14 +54,47 @@ pub fn build_desired_state(
     validate_image_references(&resources, &images)?;
 
     validate_normalized_resources(&normalized_resources)?;
+    let service_plan = service_registry.build_plan(&config.services, &resources, target)?;
+    merge_service_scripts_into_expansions(&mut expansions, &service_plan);
 
     Ok(DesiredState {
         backend: config.backend,
+        runtime: config.runtime,
+        services: config.services,
+        service_plan,
         images,
         resources,
         normalized_resources,
         expansions,
     })
+}
+
+fn merge_service_scripts_into_expansions(
+    expansions: &mut BTreeMap<String, vmctl_domain::Expansion>,
+    service_plan: &vmctl_domain::ServiceExecutionPlan,
+) {
+    for instance in &service_plan.instances {
+        let Some(target) = &instance.target else {
+            continue;
+        };
+        let Some(expansion) = expansions.get_mut(target) else {
+            continue;
+        };
+        expansion.bootstrap_steps.extend(
+            instance
+                .provision_scripts
+                .iter()
+                .map(|script| format!("{}/{}", instance.service, script)),
+        );
+        expansion.validation_steps.extend(
+            instance
+                .validation_scripts
+                .iter()
+                .map(|script| format!("{}/{}", instance.service, script)),
+        );
+        expansion.bootstrap_steps.dedup();
+        expansion.validation_steps.dedup();
+    }
 }
 
 fn apply_defaults(mut resource: Resource, defaults: &BTreeMap<String, toml::Value>) -> Resource {
@@ -801,7 +847,9 @@ mod tests {
             toml::Value::String("media".to_string()),
         );
         let err = normalize_resource(&input, &BTreeMap::new()).unwrap_err();
-        assert!(err.to_string().contains("setting `hostname` is not supported"));
+        assert!(err
+            .to_string()
+            .contains("setting `hostname` is not supported"));
     }
 
     #[test]
@@ -875,9 +923,11 @@ mod tests {
     fn disabled_resources_are_pruned_before_planning() {
         let mut disabled = resource("disabled", "vm", vec![]);
         disabled.enabled = false;
-        let registry = PackRegistry::default();
+        let registry = ResourceRegistry::default();
         let config = Config {
             backend: Default::default(),
+            runtime: Default::default(),
+            services: BTreeMap::new(),
             defaults: BTreeMap::new(),
             consts: BTreeMap::new(),
             env: BTreeMap::new(),
@@ -911,6 +961,7 @@ mod tests {
             resources,
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         }
     }
 }

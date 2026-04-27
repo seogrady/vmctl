@@ -1,0 +1,25 @@
+name = "cloudflared"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm", "lxc"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "tunnel-token"]
+services = ["cloudflared"]
+
+[container]
+container_type = "docker"
+
+[image]
+name = "cloudflare/cloudflared"
+tag = "2026.3.0"
+
+[environment]
+TUNNEL_TOKEN = "${CLOUDFLARED_TOKEN}"
+
+[settings]
+command = "tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN}"

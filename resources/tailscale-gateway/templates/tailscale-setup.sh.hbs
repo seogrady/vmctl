@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VMCTL_TAILSCALE_ENABLED={{#if tailscale.enabled}}1{{else}}0{{/if}}
+if [[ "$VMCTL_TAILSCALE_ENABLED" != "1" ]]; then
+  echo "tailscale disabled for this resource"
+  exit 0
+fi
+
+VMCTL_TAILSCALE_AUTH_KEY="{{tailscale.auth_key}}"
+VMCTL_TAILSCALE_HOSTNAME="{{tailscale.hostname}}"
+VMCTL_TAILSCALE_ROUTES="{{tailscale.advertise_routes}}"
+VMCTL_TAILSCALE_TAGS="{{tailscale.tags}}"
+VMCTL_TAILSCALE_ACCEPT_ROUTES={{#if tailscale.accept_routes}}1{{else}}0{{/if}}
+VMCTL_TAILSCALE_EXIT_NODE={{#if tailscale.advertise_exit_node}}1{{else}}0{{/if}}
+
+already_authenticated=0
+backend_state=""
+if command -v tailscale >/dev/null 2>&1 && tailscale status --json >/tmp/vmctl-tailscale-status.json 2>/dev/null; then
+  readarray -t ts_state < <(python3 - <<'PY'
+import json
+try:
+    with open("/tmp/vmctl-tailscale-status.json", encoding="utf-8") as handle:
+        status = json.load(handle)
+    have_key = bool(status.get("HaveNodeKey"))
+    backend = str(status.get("BackendState", ""))
+    print("1" if have_key and backend in {"Running", "Starting"} else "0")
+    print(backend)
+except Exception:
+    print("0")
+    print("")
+PY
+)
+  already_authenticated="${ts_state[0]}"
+  backend_state="${ts_state[1]}"
+fi
+
+set_args=()
+{{#if tailscale.hostname}}
+set_args+=(--hostname "$VMCTL_TAILSCALE_HOSTNAME")
+{{/if}}
+{{#if tailscale.advertise_routes}}
+set_args+=(--advertise-routes "$VMCTL_TAILSCALE_ROUTES")
+{{/if}}
+{{#if tailscale.advertise_exit_node}}
+set_args+=(--advertise-exit-node)
+{{/if}}
+{{#if tailscale.accept_routes}}
+set_args+=(--accept-routes)
+{{/if}}
+
+if [[ "$already_authenticated" == "1" ]]; then
+  if ((${#set_args[@]} > 0)); then
+    tailscale set "${set_args[@]}"
+  fi
+  exit 0
+fi
+
+# Keep existing node identity whenever possible.
+if [[ "$backend_state" == "Stopped" || "$backend_state" == "NoState" ]]; then
+  tailscale up "${set_args[@]}"
+  exit 0
+fi
+
+if [[ "$backend_state" != "NeedsLogin" ]]; then
+  if tailscale up "${set_args[@]}"; then
+    exit 0
+  fi
+fi
+
+if [[ -z "$VMCTL_TAILSCALE_AUTH_KEY" ]]; then
+  echo "tailscale is not authenticated and no auth key is configured"
+  exit 1
+fi
+
+args=(--auth-key "$VMCTL_TAILSCALE_AUTH_KEY")
+args+=("${set_args[@]}")
+{{#if tailscale.tags}}
+args+=(--advertise-tags "$VMCTL_TAILSCALE_TAGS")
+{{/if}}
+
+{{#if tailscale.advertise_routes}}
+cat >/etc/sysctl.d/99-tailscale-forwarding.conf <<'EOF'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv6.conf.all.forwarding=1
+{{/if}}
+{{#if tailscale.advertise_exit_node}}
+cat >/etc/sysctl.d/99-tailscale-forwarding.conf <<'EOF'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv6.conf.all.forwarding=1
+{{/if}}
+
+tailscale up "${args[@]}"

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use vmctl_domain::{DesiredState, Workspace};
-use vmctl_packs::PackRegistry;
+use vmctl_resources::ResourceRegistry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderResult {
@@ -58,7 +58,7 @@ pub trait EngineBackend {
         &self,
         workspace: &Workspace,
         desired: &DesiredState,
-        registry: &PackRegistry,
+        registry: &ResourceRegistry,
     ) -> Result<RenderResult>;
 
     fn plan(
@@ -78,7 +78,7 @@ pub trait EngineBackend {
         &self,
         _workspace: &Workspace,
         _desired: &DesiredState,
-        _registry: &PackRegistry,
+        _registry: &ResourceRegistry,
     ) -> Result<ApplyResult> {
         bail!("backend apply execution is not implemented")
     }

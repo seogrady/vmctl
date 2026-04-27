@@ -1,0 +1,39 @@
+name = "caddy"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm", "lxc"]
+
+[dependencies]
+requires = ["container-runtime", "reverse-proxy"]
+optional = []
+
+[runtime]
+requirements = ["compose-service"]
+services = ["caddy"]
+templates = [
+  { src = "templates/caddyfile.media.hbs", dst = "caddyfile.media" },
+]
+
+[scripts]
+provision = "scripts/bootstrap-ui-routing.sh"
+
+[container]
+container_type = "docker"
+
+[image]
+name = "caddy"
+tag = "2"
+
+[ports]
+published = ["80:80", "5056:5056", "7474:7474", "8097:8097"]
+
+[volumes]
+mounts = [
+  "${CONFIG_PATH}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro",
+  "${CONFIG_PATH}/caddy/ui-index:/srv/ui-index:ro",
+]
+
+[environment]
+JELLYFIN_AUTO_AUTH_TOKEN = "${JELLYFIN_AUTO_AUTH_TOKEN}"
+JELLYFIN_STREMIO_AUTH_TOKEN = "${JELLYFIN_STREMIO_AUTH_TOKEN}"
+SEERR_API_KEY = "${SEERR_API_KEY}"

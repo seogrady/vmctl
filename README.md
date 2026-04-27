@@ -35,7 +35,7 @@ cargo uninstall vmctl
 ```
 
 After installation, run commands from a vmctl workspace that contains
-`vmctl.toml` or `vmctl.example.toml` and `packs/`:
+`vmctl.toml` or `vmctl.example.toml`, `resources/`, and `services/`:
 
 ```bash
 vmctl --config vmctl.example.toml validate
@@ -323,8 +323,8 @@ vmid = 9000
 ```
 
 Docker service images are separate from Proxmox base images. Entries in
-`resources.features.media_services.services` reference service packs under
-`packs/services/`; those packs define container images such as
+`resources.features.media_services.services` reference service definitions under
+`services/<name>/service.toml`; those services define container images such as
 `lscr.io/linuxserver/jellyfin:latest`. The media role renders
 `docker-compose.media` and `media.env`, then `bootstrap-media.sh` uploads those
 artifacts to the guest, copies them to `/opt/media`, runs
@@ -635,12 +635,12 @@ from role packs.
 
 ## Workspace crates
 
-The implementation follows the crate layout in `plans/vmctl-hybrid-plan-packs.md`:
+The implementation follows the crate layout in `plans/modular-vmctl-architecture-plan.md`:
 
 - `crates/cli/` owns clap parsing, command dispatch, and terminal output.
-- `crates/config/`, `crates/domain/`, `crates/planner/`, `crates/packs/`, and
+- `crates/config/`, `crates/domain/`, `crates/planner/`, `crates/resources/`, `crates/services/`, and
   `crates/dependencies/` own config loading, backend-agnostic models,
-  desired-state construction, pack expansion, and command-scoped dependency
+  desired-state construction, resource/service expansion, and command-scoped dependency
   checks.
 - `crates/backend/`, `crates/backend-terraform/`, and `crates/backend-native/`
   define the backend interface, the OpenTofu/Terraform renderer, and the future
@@ -649,10 +649,8 @@ The implementation follows the crate layout in `plans/vmctl-hybrid-plan-packs.md
   and `crates/util/` own lockfile persistence, import/reconciliation,
   SSH-based provisioning, human-facing rendering, and shared helpers.
 
-## Pack layout
+## Resource And Service Layout
 
-- `packs/roles/` contains declarative role packs such as `media_stack` and
-  `tailscale_gateway`.
-- `packs/services/` contains service packs that can be referenced by role packs.
-- `packs/templates/` and `packs/scripts/` contain backend-independent render and
-  bootstrap assets.
+- `resources/<name>/resource.toml` contains resource defaults and composition.
+- `resources/<name>/templates/` and `resources/<name>/scripts/` contain resource-owned render and bootstrap assets.
+- `services/<name>/service.toml` contains service orchestration metadata and the container definition.

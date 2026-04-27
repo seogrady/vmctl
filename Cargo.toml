@@ -11,6 +11,7 @@ repository = "https://github.com/local/vmctl"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 handlebars = "5"
+glob = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -24,7 +25,8 @@ vmctl-dependencies = { path = "crates/dependencies" }
 vmctl-domain = { path = "crates/domain" }
 vmctl-import = { path = "crates/import" }
 vmctl-lockfile = { path = "crates/lockfile" }
-vmctl-packs = { path = "crates/packs" }
+vmctl-services = { path = "crates/services" }
+vmctl-resources = { path = "crates/resources" }
 vmctl-planner = { path = "crates/planner" }
 vmctl-provision = { path = "crates/provision" }
 vmctl-render = { path = "crates/render" }

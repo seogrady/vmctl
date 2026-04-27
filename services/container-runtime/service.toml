@@ -1,0 +1,17 @@
+name = "container-runtime"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm", "lxc"]
+
+[inputs]
+schema = [
+  { key = "engine", type = "string", default = "docker", allowed = ["docker", "podman"] },
+]
+
+[runtime]
+requirements = ["container-engine", "compose"]
+services = []
+
+[dependencies]
+requires = []
+optional = []

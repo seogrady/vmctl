@@ -1,0 +1,38 @@
+name = "tailscale-gateway"
+kind = "lxc"
+image = "debian_12_lxc"
+role = "tailscale_gateway"
+vmid = 101
+rootfs_gb = 8
+memory = 1024
+cores = 1
+description = "Tailscale subnet router managed by vmctl"
+
+[network]
+mode = "dhcp"
+
+[provision]
+user = "root"
+private_key_file = "${env.DEFAULT_SSH_PRIVATE_KEY_FILE}"
+retries = 20
+retry_delay_seconds = 15
+
+[features.lxc]
+nesting = true
+
+[features.tailscale]
+enabled = true
+mode = "router"
+auth_key = "${env.TAILSCALE_AUTH_KEY}"
+advertise_routes = ["192.168.86.0/24"]
+exit_node = false
+tags = ["tag:homelab"]
+
+[defaults]
+requires = ["tailscale"]
+
+[render]
+templates = ["tailscale-setup.sh.hbs"]
+
+[scripts]
+provision = ["bootstrap-node.sh", "bootstrap-tailscale.sh"]

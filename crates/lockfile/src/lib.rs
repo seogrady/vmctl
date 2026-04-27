@@ -163,6 +163,7 @@ mod tests {
             resources: vec![Resource {
                 name: "media-stack".to_string(),
                 kind: "vm".to_string(),
+                enabled: true,
                 image: None,
                 role: None,
                 vmid: Some(210),
@@ -172,6 +173,7 @@ mod tests {
             }],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let lockfile = Lockfile::from_desired(&desired).unwrap();
@@ -188,6 +190,7 @@ mod tests {
         let mut first = Resource {
             name: "media-stack".to_string(),
             kind: "vm".to_string(),
+            enabled: true,
             image: None,
             role: None,
             vmid: Some(210),
@@ -244,6 +247,7 @@ mod tests {
             resources: vec![],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         assert_eq!(
@@ -266,6 +270,7 @@ mod tests {
             resources: vec![],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
         let lockfile = Lockfile::from_desired_with_artifacts(&desired, &root, &[script]).unwrap();
 

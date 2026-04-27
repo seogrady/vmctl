@@ -19,7 +19,7 @@ use vmctl_config::{resolve_config_path, Config};
 use vmctl_dependencies::{backend_kind, CommandScope, DependencyPlan};
 use vmctl_domain::{DesiredState, ImageKind, ImageSource, ResolvedImage, Workspace};
 use vmctl_lockfile::Lockfile;
-use vmctl_packs::PackRegistry;
+use vmctl_resources::ResourceRegistry;
 use vmctl_util::command_runner::{self, CommandOptions, LogPrefix};
 
 const GLOBAL_APPLY_TIMEOUT: Duration = Duration::from_secs(3600);
@@ -31,8 +31,11 @@ struct Cli {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
-    #[arg(long, default_value = "packs")]
-    packs: PathBuf,
+    #[arg(long, default_value = "resources")]
+    resources: PathBuf,
+
+    #[arg(long, default_value = "services")]
+    services: PathBuf,
 
     #[command(subcommand)]
     command: Command,
@@ -151,21 +154,25 @@ enum PassthroughCommand {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Init => init_workspace(cli.config.as_deref(), &cli.packs),
+        Command::Init => init_workspace(cli.config.as_deref(), &cli.resources, &cli.services),
         Command::Validate => {
             let (_workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             check_dependencies(&desired, CommandScope::ValidateConfig)?;
             println!(
-                "valid: {} resources, {} expanded roles",
+                "valid: {} resources, {} expanded resource compositions",
                 desired.resources.len(),
                 desired.expansions.len()
             );
             Ok(())
         }
         Command::Plan { target } => {
-            let (_workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, target.as_deref())?;
+            let (_workspace, desired, _registry) = load_workspace(
+                cli.config.as_deref(),
+                &cli.resources,
+                &cli.services,
+                target.as_deref(),
+            )?;
             check_dependencies(&desired, CommandScope::ValidateConfig)?;
             print!("{}", vmctl_render::render_plan(&desired));
             Ok(())
@@ -181,7 +188,8 @@ fn main() -> Result<()> {
             target,
         } => apply_command(
             cli.config.as_deref(),
-            &cli.packs,
+            &cli.resources,
+            &cli.services,
             auto_approve,
             dry_run,
             verbose,
@@ -194,13 +202,15 @@ fn main() -> Result<()> {
         ),
         Command::Inspect { target } => inspect_command(
             cli.config.as_deref(),
-            &cli.packs,
+            &cli.resources,
+            &cli.services,
             target.as_deref(),
             InspectMode::Inspect,
         ),
         Command::Debug { name } => inspect_command(
             cli.config.as_deref(),
-            &cli.packs,
+            &cli.resources,
+            &cli.services,
             Some(&name),
             InspectMode::Debug,
         ),
@@ -213,7 +223,8 @@ fn main() -> Result<()> {
             target,
         } => apply_command(
             cli.config.as_deref(),
-            &cli.packs,
+            &cli.resources,
+            &cli.services,
             auto_approve,
             false,
             verbose,
@@ -230,7 +241,7 @@ fn main() -> Result<()> {
         } => {
             require_auto_approve(auto_approve, "destroy")?;
             let (workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             check_dependencies(&desired, CommandScope::Destroy)?;
             let result = TerraformBackend.destroy(&workspace, &TargetSelector { name: target })?;
             println!("{}", result.summary);
@@ -238,7 +249,7 @@ fn main() -> Result<()> {
         }
         Command::Import => {
             let (workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             let lockfile_path = workspace.root.join("vmctl.lock");
             let lockfile = ensure_lockfile(&workspace, &desired)?;
             print!("{}", vmctl_import::summarize_lockfile(&lockfile_path)?);
@@ -259,7 +270,7 @@ fn main() -> Result<()> {
         }
         Command::Sync => {
             let (workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             let lockfile = ensure_lockfile(&workspace, &desired)?;
             let summary = vmctl_import::compare_desired_to_lockfile(&desired, &lockfile);
             print!("{}", vmctl_import::render_sync_summary(&summary));
@@ -267,9 +278,19 @@ fn main() -> Result<()> {
         }
         Command::Provision { target } => {
             let (workspace, desired, registry, source_fingerprint) =
-                load_workspace_with_fingerprint(cli.config.as_deref(), &cli.packs, target.as_deref())?;
+                load_workspace_with_fingerprint(
+                    cli.config.as_deref(),
+                    &cli.resources,
+                    &cli.services,
+                    target.as_deref(),
+                )?;
             check_dependencies(&desired, CommandScope::Provision)?;
-            warn_workspace_sources_changed(cli.config.as_deref(), &cli.packs, &source_fingerprint)?;
+            warn_workspace_sources_changed(
+                cli.config.as_deref(),
+                &cli.resources,
+                &cli.services,
+                &source_fingerprint,
+            )?;
             let progress = ApplyProgress::new();
             let result = run_provision(
                 &workspace,
@@ -284,13 +305,17 @@ fn main() -> Result<()> {
         Command::Backend { command } => match command {
             BackendCommand::Doctor => {
                 let (workspace, desired, _registry) =
-                    load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                    load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
                 check_dependencies(&desired, CommandScope::Doctor)?;
                 TerraformBackend.validate_backend(&workspace)
             }
             BackendCommand::Plan { dry_run, target } => {
-                let (workspace, desired, registry) =
-                    load_workspace(cli.config.as_deref(), &cli.packs, target.as_deref())?;
+                let (workspace, desired, registry) = load_workspace(
+                    cli.config.as_deref(),
+                    &cli.resources,
+                    &cli.services,
+                    target.as_deref(),
+                )?;
                 let backend_workspace = if dry_run {
                     dry_run_workspace(&workspace)
                 } else {
@@ -321,7 +346,7 @@ fn main() -> Result<()> {
             }
             BackendCommand::Render => {
                 let (workspace, desired, registry) =
-                    load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                    load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
                 check_dependencies(&desired, CommandScope::Render)?;
                 let result = TerraformBackend.render(&workspace, &desired, &registry)?;
                 let lockfile = Lockfile::from_desired_with_artifacts(
@@ -336,7 +361,7 @@ fn main() -> Result<()> {
             BackendCommand::ShowState => show_backend_state(&default_workspace()?),
             BackendCommand::Validate { live } => {
                 let (workspace, desired, registry) =
-                    load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                    load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
                 let backend_workspace = if live {
                     workspace.clone()
                 } else {
@@ -360,7 +385,7 @@ fn main() -> Result<()> {
         },
         Command::Images { command } => {
             let (_workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             match command {
                 ImagesCommand::List => {
                     print!("{}", render_images_list(&desired));
@@ -381,7 +406,7 @@ fn main() -> Result<()> {
         }
         Command::Passthrough { command } => {
             let (_workspace, desired, _registry) =
-                load_workspace(cli.config.as_deref(), &cli.packs, None)?;
+                load_workspace(cli.config.as_deref(), &cli.resources, &cli.services, None)?;
             match command {
                 PassthroughCommand::Doctor => {
                     print!("{}", render_passthrough_doctor(&desired)?);
@@ -398,7 +423,8 @@ fn main() -> Result<()> {
 
 fn apply_command(
     config_path: Option<&Path>,
-    packs_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
     _auto_approve: bool,
     dry_run: bool,
     verbose: bool,
@@ -410,10 +436,10 @@ fn apply_command(
     _command: &str,
 ) -> Result<()> {
     let (workspace, mut desired, registry, source_fingerprint) =
-        load_workspace_with_fingerprint(config_path, packs_path, None)?;
+        load_workspace_with_fingerprint(config_path, resources_path, services_path, None)?;
     let mut provision_desired = if target.is_some() {
         let (_target_workspace, target_desired, _target_registry, _target_fingerprint) =
-            load_workspace_with_fingerprint(config_path, packs_path, target)?;
+            load_workspace_with_fingerprint(config_path, resources_path, services_path, target)?;
         target_desired
     } else {
         desired.clone()
@@ -473,7 +499,12 @@ fn apply_command(
             )
         })?
     };
-    warn_workspace_sources_changed(config_path, packs_path, &source_fingerprint)?;
+    warn_workspace_sources_changed(
+        config_path,
+        resources_path,
+        services_path,
+        &source_fingerprint,
+    )?;
     guard.checkpoint("runtime repair after apply")?;
     repair_existing_runtime_settings(&desired)?;
     guard.checkpoint("lockfile write")?;
@@ -538,11 +569,13 @@ enum InspectMode {
 
 fn inspect_command(
     config_path: Option<&Path>,
-    packs_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
     target: Option<&str>,
     mode: InspectMode,
 ) -> Result<()> {
-    let (workspace, desired, _registry) = load_workspace(config_path, packs_path, target)?;
+    let (workspace, desired, _registry) =
+        load_workspace(config_path, resources_path, services_path, target)?;
     inspect_workspace(&workspace, &desired, mode)
 }
 
@@ -1073,7 +1106,7 @@ impl ApplyGuard {
 fn validate_live_backend(
     workspace: &Workspace,
     desired: &DesiredState,
-    registry: &PackRegistry,
+    registry: &ResourceRegistry,
 ) -> Result<vmctl_backend::BackendValidation> {
     TerraformBackend.render_for_plan(workspace, desired, registry, PlanMode::Online)?;
     TerraformBackend.validate_rendered(workspace)
@@ -2304,19 +2337,21 @@ fn required_image_names(desired: &DesiredState) -> BTreeSet<String> {
 
 fn load_workspace(
     config_path: Option<&Path>,
-    packs_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
     target: Option<&str>,
-) -> Result<(Workspace, DesiredState, PackRegistry)> {
+) -> Result<(Workspace, DesiredState, ResourceRegistry)> {
     let (workspace, desired, registry, _) =
-        load_workspace_with_fingerprint(config_path, packs_path, target)?;
+        load_workspace_with_fingerprint(config_path, resources_path, services_path, target)?;
     Ok((workspace, desired, registry))
 }
 
 fn load_workspace_with_fingerprint(
     config_path: Option<&Path>,
-    packs_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
     target: Option<&str>,
-) -> Result<(Workspace, DesiredState, PackRegistry, String)> {
+) -> Result<(Workspace, DesiredState, ResourceRegistry, String)> {
     let workspace = default_workspace()?;
     let config_path = resolve_config_path(config_path)?.path;
     let raw = std::fs::read_to_string(&config_path)
@@ -2327,9 +2362,21 @@ fn load_workspace_with_fingerprint(
         &process_env,
     )?;
     let config = Config::from_value(config_value.clone())?;
-    let registry = PackRegistry::load_with_config(packs_path, &config_value, &process_env)?;
-    let desired = vmctl_planner::build_desired_state(config, &registry, target)?;
-    let source_fingerprint = workspace_source_fingerprint(&config_path, packs_path)?;
+    let registry = ResourceRegistry::load_with_config(
+        resources_path,
+        services_path,
+        &config_value,
+        &process_env,
+    )?;
+    let service_registry = vmctl_services::ServiceRegistry::load(services_path)?;
+    let desired = vmctl_planner::build_desired_state_with_services(
+        config,
+        &registry,
+        &service_registry,
+        target,
+    )?;
+    let source_fingerprint =
+        workspace_source_fingerprint(&config_path, resources_path, services_path)?;
     Ok((workspace, desired, registry, source_fingerprint))
 }
 
@@ -2349,12 +2396,14 @@ fn dry_run_workspace(workspace: &Workspace) -> Workspace {
 
 fn warn_workspace_sources_changed(
     config_path: Option<&Path>,
-    packs_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
     expected_fingerprint: &str,
 ) -> Result<()> {
     let current_fingerprint = workspace_source_fingerprint(
         &resolve_config_path(config_path)?.path,
-        packs_path,
+        resources_path,
+        services_path,
     )?;
     if current_fingerprint != expected_fingerprint {
         eprintln!(
@@ -2364,7 +2413,11 @@ fn warn_workspace_sources_changed(
     Ok(())
 }
 
-fn workspace_source_fingerprint(config_path: &Path, packs_path: &Path) -> Result<String> {
+fn workspace_source_fingerprint(
+    config_path: &Path,
+    resources_path: &Path,
+    services_path: &Path,
+) -> Result<String> {
     let mut hasher = Sha256::new();
     let config_bytes = std::fs::read(config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
@@ -2374,10 +2427,11 @@ fn workspace_source_fingerprint(config_path: &Path, packs_path: &Path) -> Result
     hasher.update(&config_bytes);
     hasher.update(b"\0");
 
-    let mut files = list_absolute_files(packs_path)?;
+    let mut files = list_absolute_files(resources_path)?;
+    files.extend(list_absolute_files(services_path)?);
     files.sort();
     for path in files {
-        let rel = path.strip_prefix(packs_path).unwrap_or(&path);
+        let rel = path.strip_prefix(resources_path).unwrap_or(&path);
         let bytes =
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
         hasher.update(rel.to_string_lossy().as_bytes());
@@ -2389,17 +2443,19 @@ fn workspace_source_fingerprint(config_path: &Path, packs_path: &Path) -> Result
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn init_workspace(config_path: Option<&Path>, packs_path: &Path) -> Result<()> {
+fn init_workspace(
+    config_path: Option<&Path>,
+    resources_path: &Path,
+    services_path: &Path,
+) -> Result<()> {
     let config_path = config_path.unwrap_or_else(|| Path::new("vmctl.toml"));
     if !config_path.exists() {
         std::fs::write(config_path, include_str!("../../../vmctl.example.toml"))
             .with_context(|| format!("failed to write {}", config_path.display()))?;
     }
 
-    std::fs::create_dir_all(packs_path.join("roles"))?;
-    std::fs::create_dir_all(packs_path.join("services"))?;
-    std::fs::create_dir_all(packs_path.join("templates"))?;
-    std::fs::create_dir_all(packs_path.join("scripts"))?;
+    std::fs::create_dir_all(resources_path)?;
+    std::fs::create_dir_all(services_path)?;
     println!("initialized vmctl workspace");
     Ok(())
 }
@@ -2411,7 +2467,7 @@ fn check_dependencies(desired: &DesiredState, scope: CommandScope) -> Result<()>
 fn run_provision(
     workspace: &Workspace,
     desired: &DesiredState,
-    registry: &PackRegistry,
+    registry: &ResourceRegistry,
     executor: &dyn vmctl_provision::SshExecutor,
     progress: &ApplyProgress,
 ) -> Result<vmctl_provision::ProvisionResult> {
@@ -2426,10 +2482,8 @@ fn run_provision(
     let spinner = progress.start("provisioning resources");
     let resource_totals = provision_resource_totals(&plan);
     let mut resource_completed = BTreeMap::<String, usize>::new();
-    let result = vmctl_provision::run_provision_plan_with_progress(
-        &plan,
-        executor,
-        |event| match event {
+    let result =
+        vmctl_provision::run_provision_plan_with_progress(&plan, executor, |event| match event {
             vmctl_provision::ProvisionEvent::StepStarted { step, index, total } => {
                 spinner.set_message(format!(
                     "provisioning {}/{}: {} via {}",
@@ -2498,8 +2552,7 @@ fn run_provision(
                     index, total, step.resource, script
                 ));
             }
-        },
-    );
+        });
 
     match result {
         Ok(result) => {
@@ -2516,7 +2569,7 @@ fn run_provision(
 fn refresh_rendered_workspace(
     workspace: &Workspace,
     desired: &DesiredState,
-    registry: &PackRegistry,
+    registry: &ResourceRegistry,
 ) -> Result<()> {
     TerraformBackend.render(workspace, desired, registry)?;
     Ok(())
@@ -2606,6 +2659,9 @@ fn list_files(root: &Path) -> Result<Vec<PathBuf>> {
 
 fn list_absolute_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
+    if !root.exists() {
+        return Ok(files);
+    }
     collect_absolute_files(root, &mut files)?;
     files.sort();
     Ok(files)
@@ -2764,6 +2820,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
         let workspace = Workspace {
             root: PathBuf::from("/tmp/nonexistent-vmctl-test"),
@@ -2920,6 +2977,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         assert_eq!(
@@ -2960,6 +3018,7 @@ mod tests {
                 ),
             ]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         disable_vm_start(&mut desired);
@@ -2988,6 +3047,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         disable_vm_start_with_status(&mut desired, |vmid| (vmid == 210).then_some(true));
@@ -3035,6 +3095,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let err = validate_apply_preflight(&desired).unwrap_err();
@@ -3059,6 +3120,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let err = validate_apply_preflight(&desired).unwrap_err();
@@ -3089,6 +3151,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         validate_apply_preflight(&desired).unwrap();
@@ -3118,6 +3181,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let err = validate_apply_preflight_with_host_memory(&desired, Some(15765)).unwrap_err();
@@ -3142,6 +3206,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         validate_apply_preflight_with_host_memory(&desired, Some(15765)).unwrap();
@@ -3163,6 +3228,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
         let state_addresses = BTreeSet::from([
             "module.media_stack.proxmox_virtual_environment_vm.this[0]".to_string(),
@@ -3192,6 +3258,7 @@ mod tests {
                 },
             )]),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
         let state_addresses = BTreeSet::from([
             "module.media_stack.proxmox_virtual_environment_vm.this[0]".to_string(),
@@ -3419,6 +3486,7 @@ Interface: vmbr0
             resources: vec![Resource {
                 name: "media-stack".to_string(),
                 kind: "vm".to_string(),
+                enabled: true,
                 image: None,
                 role: None,
                 vmid: Some(210),
@@ -3428,6 +3496,7 @@ Interface: vmbr0
             }],
             normalized_resources: BTreeMap::new(),
             expansions: BTreeMap::new(),
+            ..DesiredState::default()
         };
 
         let lockfile = write_lockfile(&workspace, &desired).unwrap();
@@ -3482,31 +3551,33 @@ Interface: vmbr0
     }
 
     #[test]
-    fn workspace_source_fingerprint_changes_when_pack_source_changes() {
+    fn workspace_source_fingerprint_changes_when_service_source_changes() {
         let root = unique_temp_dir();
-        std::fs::create_dir_all(root.join("packs/services")).unwrap();
+        std::fs::create_dir_all(root.join("resources/services")).unwrap();
         std::fs::write(root.join("vmctl.toml"), "title = 'example'\n").unwrap();
         std::fs::write(
-            root.join("packs/services/seerr.toml"),
+            root.join("resources/services/seerr.toml"),
             "name = 'seerr'\n[settings]\ndefault_movie_quality_profile = 'Any'\n",
         )
         .unwrap();
 
         let first = workspace_source_fingerprint(
             &root.join("vmctl.toml"),
-            &root.join("packs"),
+            &root.join("resources"),
+            &root.join("services"),
         )
         .unwrap();
 
         std::fs::write(
-            root.join("packs/services/seerr.toml"),
+            root.join("resources/services/seerr.toml"),
             "name = 'seerr'\n[settings]\ndefault_movie_quality_profile = 'HD - 720p/1080p'\n",
         )
         .unwrap();
 
         let second = workspace_source_fingerprint(
             &root.join("vmctl.toml"),
-            &root.join("packs"),
+            &root.join("resources"),
+            &root.join("services"),
         )
         .unwrap();
 
@@ -3525,7 +3596,8 @@ Interface: vmbr0
         let result = (|| -> Result<()> {
             let (workspace, desired, registry) = load_workspace(
                 Some(&repo_root.join("vmctl.toml")),
-                &repo_root.join("packs"),
+                &repo_root.join("resources"),
+                &repo_root.join("services"),
                 None,
             )?;
             let stale_media_env = workspace
@@ -3533,10 +3605,7 @@ Interface: vmbr0
                 .join(&workspace.generated_dir)
                 .join("resources/media-stack/media.env");
             std::fs::create_dir_all(stale_media_env.parent().unwrap())?;
-            std::fs::write(
-                &stale_media_env,
-                "RADARR_DEFAULT_QUALITY_PROFILE=\"\"\n",
-            )?;
+            std::fs::write(&stale_media_env, "RADARR_DEFAULT_QUALITY_PROFILE=\"\"\n")?;
 
             refresh_rendered_workspace(&workspace, &desired, &registry)?;
 

@@ -1,0 +1,37 @@
+name = "qbittorrent-vpn"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime", "gluetun"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "vpn-network", "media-storage"]
+services = ["qbittorrent-vpn"]
+
+[scripts]
+provision = "scripts/bootstrap-qbittorrent.sh"
+
+[container]
+container_type = "docker"
+vpn_route_through_gluetun = true
+download_type = "torrent"
+
+[image]
+name = "lscr.io/linuxserver/qbittorrent"
+tag = "latest"
+
+[ports]
+published = ["8080:8080", "6881:6881", "6881:6881/udp"]
+
+[volumes]
+mounts = ["${STORAGE_PATH}:/data", "${CONFIG_PATH}/qbittorrent:/config"]
+
+[ui]
+enabled = true
+port = 8080
+path = "/"
+name = "qBittorrent"
+description = "Torrent client"

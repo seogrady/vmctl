@@ -1,0 +1,26 @@
+name = "gluetun"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "vpn"]
+services = ["gluetun"]
+
+[container]
+container_type = "docker"
+vpn_gateway = true
+
+[image]
+name = "qmcgaw/gluetun"
+tag = "latest"
+
+[ports]
+published = ["8080:8080", "6881:6881", "6881:6881/udp"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/gluetun:/gluetun"]

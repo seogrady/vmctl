@@ -1,0 +1,122 @@
+services:
+{{#each service_definitions}}
+{{#if vpn_gateway}}
+{{#if @root.vpn.enabled}}
+  {{name}}:
+    image: "{{image.name}}:{{image.tag}}"
+    env_file:
+      - .env
+    restart: unless-stopped
+{{#if settings.init}}
+    init: true
+{{/if}}
+{{#if settings.entrypoint}}
+    entrypoint: {{{settings.entrypoint}}}
+{{/if}}
+{{#if settings.command}}
+    command: {{{settings.command}}}
+{{/if}}
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=${VPN_SERVICE_PROVIDER}
+      - VPN_TYPE=${VPN_TYPE}
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_CITIES=${VPN_SERVER_CITIES}
+      - FIREWALL_INPUT_PORTS=8080,6881
+{{#if environment}}
+{{#each environment}}
+      - "{{@key}}={{this}}"
+{{/each}}
+{{/if}}
+{{#if ports.published}}
+    ports:
+{{#each ports.published}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{#if volumes.mounts}}
+    volumes:
+{{#each volumes.mounts}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{/if}}
+{{else}}
+  {{name}}:
+    image: "{{image.name}}:{{image.tag}}"
+    env_file:
+      - .env
+    restart: unless-stopped
+{{#if settings.init}}
+    init: true
+{{/if}}
+{{#if settings.entrypoint}}
+    entrypoint: {{{settings.entrypoint}}}
+{{/if}}
+{{#if settings.command}}
+    command: {{settings.command}}
+{{/if}}
+{{#if settings.network_mode}}
+    network_mode: "{{settings.network_mode}}"
+{{/if}}
+{{#if settings.extra_hosts}}
+    extra_hosts:
+{{#each settings.extra_hosts}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{#if (has_items group_add)}}
+    group_add:
+{{#each group_add}}
+      - {{this}}
+{{/each}}
+{{/if}}
+{{#if (has_items devices)}}
+    devices:
+{{#each devices}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{#if vpn_route_through_gluetun}}
+{{#if @root.vpn.enabled}}
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+{{else}}
+{{#unless (eq settings.network_mode "host")}}
+{{#if ports.published}}
+    ports:
+{{#each ports.published}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{/unless}}
+{{/if}}
+{{else}}
+{{#unless (eq settings.network_mode "host")}}
+{{#if ports.published}}
+    ports:
+{{#each ports.published}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{/unless}}
+{{/if}}
+{{#if volumes.mounts}}
+    volumes:
+{{#each volumes.mounts}}
+      - "{{this}}"
+{{/each}}
+{{/if}}
+{{#if environment}}
+    environment:
+{{#each environment}}
+      - "{{@key}}={{this}}"
+{{/each}}
+{{/if}}
+{{/if}}
+{{/each}}

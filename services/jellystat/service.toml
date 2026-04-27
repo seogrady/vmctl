@@ -1,0 +1,35 @@
+name = "jellystat"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime", "jellyfin", "jellystat-db"]
+optional = []
+
+[runtime]
+requirements = ["compose-service"]
+services = ["jellystat"]
+
+[scripts]
+provision = "scripts/bootstrap-jellystat.sh"
+
+[container]
+container_type = "docker"
+
+[image]
+name = "cyfershepard/jellystat"
+tag = "latest"
+
+[ports]
+published = ["3000:3000"]
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellystat:/app/backend/backup-data"]
+
+[ui]
+enabled = true
+port = 3000
+path = "/"
+name = "Jellystat"
+description = "Usage analytics"

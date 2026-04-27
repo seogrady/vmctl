@@ -1,0 +1,26 @@
+name = "flaresolverr"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service"]
+services = ["flaresolverr"]
+
+[scripts]
+provision = "scripts/bootstrap-flaresolverr.sh"
+
+[container]
+container_type = "docker"
+
+[image]
+name = "ghcr.io/flaresolverr/flaresolverr"
+tag = "v3.4.6"
+
+[environment]
+LOG_LEVEL = "info"
+TZ = "${TZ}"

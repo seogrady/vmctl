@@ -1,0 +1,22 @@
+name = "jellystat-db"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime"]
+optional = []
+
+[runtime]
+requirements = ["compose-service", "persistent-volume"]
+services = ["jellystat-db"]
+
+[container]
+container_type = "docker"
+
+[image]
+name = "postgres"
+tag = "15-alpine"
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellystat-db:/var/lib/postgresql/data"]

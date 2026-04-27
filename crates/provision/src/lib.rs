@@ -80,6 +80,10 @@ impl SshExecutor for SystemSshExecutor {
                     "-o",
                     "BatchMode=yes",
                     "-o",
+                    "IdentitiesOnly=yes",
+                    "-o",
+                    "IdentityAgent=none",
+                    "-o",
                     "StrictHostKeyChecking=accept-new",
                     &target,
                     &mkdir,
@@ -99,6 +103,10 @@ impl SshExecutor for SystemSshExecutor {
                     &step.private_key_file,
                     "-o",
                     "BatchMode=yes",
+                    "-o",
+                    "IdentitiesOnly=yes",
+                    "-o",
+                    "IdentityAgent=none",
                     "-o",
                     "StrictHostKeyChecking=accept-new",
                     "-r",
@@ -124,6 +132,10 @@ impl SshExecutor for SystemSshExecutor {
                     &step.private_key_file,
                     "-o",
                     "BatchMode=yes",
+                    "-o",
+                    "IdentitiesOnly=yes",
+                    "-o",
+                    "IdentityAgent=none",
                     "-o",
                     "StrictHostKeyChecking=accept-new",
                     &target,
@@ -268,7 +280,7 @@ fn resource_steps(
     if normalized.kind == "vm" && normalized.started == Some(false) {
         return Ok(Vec::new());
     }
-    if expansion.bootstrap_steps.is_empty() {
+    if expansion.bootstrap_steps.is_empty() && expansion.validation_steps.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -308,7 +320,11 @@ fn resource_steps(
         .join("resources")
         .join(&resource.name);
     let remote_resource_dir = format!("/tmp/vmctl-{}", resource.name);
-    for script in &expansion.bootstrap_steps {
+    for script in expansion
+        .bootstrap_steps
+        .iter()
+        .chain(expansion.validation_steps.iter())
+    {
         let local_script = local_resource_dir.join("scripts").join(script);
         steps.push(ProvisionStep {
             resource: resource.name.clone(),
@@ -335,7 +351,7 @@ mod tests {
     use vmctl_domain::{BackendConfig, Expansion, ProvisionConfig};
 
     #[test]
-    fn builds_steps_from_pack_bootstrap_scripts() {
+    fn builds_steps_from_service_bootstrap_scripts() {
         let workspace = Workspace {
             root: PathBuf::from("/repo"),
             generated_dir: PathBuf::from("backend/generated/workspace"),
@@ -346,6 +362,7 @@ mod tests {
             resources: vec![Resource {
                 name: "media-stack".to_string(),
                 kind: "vm".to_string(),
+                enabled: true,
                 image: None,
                 role: Some("media_stack".to_string()),
                 vmid: Some(210),
@@ -374,6 +391,7 @@ mod tests {
                     ..Expansion::default()
                 },
             )]),
+            ..DesiredState::default()
         };
 
         let plan = build_provision_plan(&workspace, &desired).unwrap();
@@ -403,6 +421,7 @@ mod tests {
             resources: vec![Resource {
                 name: "kodi-htpc".to_string(),
                 kind: "vm".to_string(),
+                enabled: true,
                 image: None,
                 role: Some("kodi_htpc".to_string()),
                 vmid: Some(211),
@@ -433,6 +452,7 @@ mod tests {
                     ..Expansion::default()
                 },
             )]),
+            ..DesiredState::default()
         };
 
         let plan = build_provision_plan(&workspace, &desired).unwrap();

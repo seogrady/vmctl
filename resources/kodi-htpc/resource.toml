@@ -1,0 +1,63 @@
+name = "kodi-htpc"
+kind = "vm"
+image = "ubuntu_24_cloud_image"
+role = "kodi_htpc"
+vmid = 211
+cores = 4
+memory = 4096
+disk_gb = 32
+disk_interface = "scsi0"
+scsi_hardware = "virtio-scsi-single"
+iothread = false
+description = "Kodi living room HTPC VM managed by vmctl"
+depends_on = []
+enabled = false
+
+[network]
+mode = "dhcp"
+
+[cloud_init]
+user = "ubuntu"
+ssh_key_file = "${env.DEFAULT_SSH_KEY_FILE}"
+
+[provision]
+user = "ubuntu"
+private_key_file = "${env.DEFAULT_SSH_PRIVATE_KEY_FILE}"
+
+[features.tailscale]
+enabled = true
+mode = "client"
+auth_key = "${env.TAILSCALE_AUTH_KEY}"
+tags = ["tag:homelab"]
+
+[features.intel_igpu]
+enabled = true
+mapping = "intel-igpu"
+pci_device = "00:02.0"
+
+[features.htpc]
+enabled = true
+autostart = true
+cec = true
+
+[features.remote]
+enabled = true
+web_port = 8080
+event_server_port = 9777
+tailscale_https_enabled = true
+tailscale_https_target = "http://127.0.0.1:8080"
+
+[features.jellyfin]
+enabled = true
+server_url = "http://media-stack/jf"
+username = "${env.JELLYFIN_ADMIN_USER}"
+password = "${env.JELLYFIN_ADMIN_PASSWORD}"
+
+[defaults]
+requires = ["kodi", "xorg", "jellyfin"]
+
+[render]
+templates = ["kodi.env.hbs", "tailscale-setup.sh.hbs"]
+
+[scripts]
+provision = ["bootstrap-node.sh", "bootstrap-tailscale.sh", "bootstrap-kodi.sh", "bootstrap-kodi-jellyfin.sh"]

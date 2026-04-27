@@ -1,0 +1,35 @@
+name = "jellio-shim"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime", "jellyfin"]
+optional = []
+
+[runtime]
+requirements = ["compose-service"]
+services = ["jellio-shim"]
+templates = [
+  { src = "templates/jellio-shim.py.hbs", dst = "jellio-shim.py" },
+]
+
+[scripts]
+provision = "scripts/bootstrap-jellio.sh"
+
+[container]
+container_type = "docker"
+
+[image]
+name = "python"
+tag = "3.13-alpine"
+
+[settings]
+command = "python3 /app/jellio-shim.py"
+
+[volumes]
+mounts = ["${CONFIG_PATH}/jellio-shim:/app:ro"]
+
+[environment]
+JELLIO_SHIM_LISTEN = "0.0.0.0:8098"
+JELLIO_SHIM_UPSTREAM = "${JELLYFIN_INTERNAL_URL}"

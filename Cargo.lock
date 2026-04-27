@@ -165,6 +165,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "handlebars"
 version = "5.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -483,10 +489,11 @@ dependencies = [
  "vmctl-domain",
  "vmctl-import",
  "vmctl-lockfile",
- "vmctl-packs",
  "vmctl-planner",
  "vmctl-provision",
  "vmctl-render",
+ "vmctl-resources",
+ "vmctl-services",
  "vmctl-util",
 ]
 
@@ -497,7 +504,7 @@ dependencies = [
  "anyhow",
  "serde",
  "vmctl-domain",
- "vmctl-packs",
+ "vmctl-resources",
 ]
 
 [[package]]
@@ -507,7 +514,7 @@ dependencies = [
  "anyhow",
  "vmctl-backend",
  "vmctl-domain",
- "vmctl-packs",
+ "vmctl-resources",
 ]
 
 [[package]]
@@ -521,8 +528,9 @@ dependencies = [
  "vmctl-backend",
  "vmctl-config",
  "vmctl-domain",
- "vmctl-packs",
  "vmctl-planner",
+ "vmctl-resources",
+ "vmctl-services",
  "vmctl-util",
 ]
 
@@ -576,19 +584,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vmctl-packs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "handlebars",
- "serde",
- "serde_json",
- "toml",
- "vmctl-config",
- "vmctl-domain",
-]
-
-[[package]]
 name = "vmctl-planner"
 version = "0.1.0"
 dependencies = [
@@ -596,7 +591,8 @@ dependencies = [
  "toml",
  "vmctl-config",
  "vmctl-domain",
- "vmctl-packs",
+ "vmctl-resources",
+ "vmctl-services",
 ]
 
 [[package]]
@@ -612,6 +608,31 @@ dependencies = [
 name = "vmctl-render"
 version = "0.1.0"
 dependencies = [
+ "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-resources"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glob",
+ "handlebars",
+ "serde",
+ "serde_json",
+ "toml",
+ "vmctl-config",
+ "vmctl-domain",
+]
+
+[[package]]
+name = "vmctl-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glob",
+ "serde",
+ "toml",
  "vmctl-domain",
 ]
 

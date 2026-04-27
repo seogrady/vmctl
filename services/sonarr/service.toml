@@ -1,0 +1,32 @@
+name = "sonarr"
+version = "1.0.0"
+scope = "resource"
+targets = ["vm"]
+
+[dependencies]
+requires = ["container-runtime", "prowlarr"]
+optional = ["qbittorrent-vpn", "sabnzbd", "recyclarr"]
+
+[runtime]
+requirements = ["compose-service", "media-storage"]
+services = ["sonarr"]
+
+[container]
+container_type = "docker"
+
+[image]
+name = "lscr.io/linuxserver/sonarr"
+tag = "latest"
+
+[ports]
+published = ["8989:8989"]
+
+[volumes]
+mounts = ["${STORAGE_PATH}:/data", "${CONFIG_PATH}/sonarr:/config"]
+
+[ui]
+enabled = true
+port = 8989
+path = "/"
+name = "Sonarr"
+description = "TV automation"
