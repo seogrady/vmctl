@@ -54,7 +54,12 @@ pub fn build_desired_state_with_services(
     validate_image_references(&resources, &images)?;
 
     validate_normalized_resources(&normalized_resources)?;
-    let service_plan = service_registry.build_plan(&config.services, &resources, target)?;
+    let service_plan = service_registry.build_plan(
+        &config.services,
+        &resources,
+        target,
+        &config.runtime.engine,
+    )?;
     merge_service_scripts_into_expansions(&mut expansions, &service_plan);
 
     Ok(DesiredState {
@@ -932,7 +937,6 @@ mod tests {
             consts: BTreeMap::new(),
             env: BTreeMap::new(),
             groups: BTreeMap::new(),
-            paths: Default::default(),
             sources: Default::default(),
             images: BTreeMap::new(),
             resources: vec![resource("enabled", "vm", vec![]), disabled],

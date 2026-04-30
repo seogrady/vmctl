@@ -1,4 +1,5 @@
 # Copy to `vmctl.toml` for local overrides.
+version = "2.0.0"
 
 [backend]
 kind = "tofu"
@@ -11,13 +12,8 @@ token_id = "${PROXMOX_TOKEN_ID}"
 token_secret = "${PROXMOX_TOKEN_SECRET}"
 tls_insecure = true
 
-[runtime]
-engine = "docker"
-
-[paths]
-modules = ["./resources", "./services"]
-
 [sources]
+local = ["./resources", "./services"]
 git = []
 
 [defaults]
@@ -28,23 +24,8 @@ start_on_boot = true
 agent = true
 tags = ["vmctl", "homelab"]
 
-[defaults.features.media_services.playback]
-enable_pre_normalization = false
-enable_remote_transcoder = false
-remove_original_after_normalization = false
-remote_transcoder_host = ""
-remote_transcoder_user = "ubuntu"
-remote_transcoder_ssh_key = "/root/.ssh/id_ed25519"
-remote_transcoder_ffmpeg = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-normalize_video_codec = "libx265"
-normalize_preset = "slow"
-normalize_crf = 19
-normalize_audio_codec = "aac"
-normalize_audio_bitrate = "384k"
-normalize_max_width = 0
-tone_map_enabled = true
-tone_map_algorithm = "hable"
-tone_map_desat = "0.0"
+[defaults.runtime]
+engine = "docker"
 
 [defaults.cloud_init]
 ssh_key_file = "${DEFAULT_SSH_KEY_FILE}"
@@ -68,31 +49,6 @@ PROXMOX_TOKEN_SECRET = "${PROXMOX_TOKEN_SECRET}"
 TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
 DEFAULT_SSH_KEY_FILE = "${DEFAULT_SSH_KEY_FILE}"
 DEFAULT_SSH_PRIVATE_KEY_FILE = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
-JELLYFIN_ADMIN_USER = "admin"
-JELLYFIN_ADMIN_PASSWORD = "${JELLYFIN_ADMIN_PASSWORD}"
-GITEA_ADMIN_USER = "admin"
-GITEA_ADMIN_PASSWORD = "changeme"
-GITEA_ADMIN_EMAIL = "admin@gitea.local"
-GITEA_DOMAIN = "gitea"
-GITEA_HTTP_PORT = "3000"
-GITEA_SSH_PORT = "2222"
-GITEA_BASE_URL = ""
-GITEA_SSH_HOST = ""
-GITEA_TAILSCALE_HTTPS_ENABLED = "true"
-GITEA_TAILSCALE_HTTPS_TARGET = ""
-SEERR_API_KEY = ""
-SABNZBD_API_KEY = ""
-SONARR_DEFAULT_QUALITY_PROFILE = "WEB-1080p"
-RADARR_DEFAULT_QUALITY_PROFILE = "HD Bluray + WEB"
-CLOUDFLARED_TOKEN = ""
-CLOUDFLARE_PUBLIC_BASE_URL = ""
-WIREGUARD_PRIVATE_KEY = ""
-WIREGUARD_ADDRESSES = ""
-VPN_SERVER_CITIES = ""
-
-[groups]
-infra = ["tailscale-gateway", "proxmox-host"]
-media = ["media-stack"]
 
 [images.debian_12_lxc]
 kind = "lxc"
@@ -111,31 +67,3 @@ storage = "local"
 content_type = "import"
 file_name = "noble-server-cloudimg-amd64.qcow2"
 url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-
-[resources.tailscale-gateway]
-kind = "lxc"
-image = "debian_12_lxc"
-role = "tailscale_gateway"
-
-[resources.tailscale-gateway.config]
-vmid = 101
-rootfs_gb = 8
-memory = 1024
-cores = 1
-description = "Tailscale subnet router managed by vmctl"
-
-[resources.tailscale-gateway.config.network]
-mode = "dhcp"
-
-# Uncomment if want to override defaults
-# [resources.tailscale-gateway.config.provision]
-# user = "ubuntu"
-# private_key_file = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
-# retries = 20
-# retry_delay_seconds = 15
-
-[resources.tailscale-gateway.config.features.lxc]
-nesting = true
-
-[resources.tailscale-gateway.config.features.tailscale]
-enabled = true

@@ -21,6 +21,6 @@ container_type = "docker"
 name = "ghcr.io/flaresolverr/flaresolverr"
 tag = "v3.4.6"
 
-[environment]
+[env]
 LOG_LEVEL = "info"
 TZ = "${TZ}"

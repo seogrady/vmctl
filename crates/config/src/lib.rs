@@ -8,28 +8,52 @@ use vmctl_domain::{
     BackendConfig, ImageConfig, ImageKind, ImageSource, Resource, RuntimeConfig, ServiceSelection,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModulePathsConfig {
-    #[serde(default = "default_module_paths")]
-    pub modules: Vec<PathBuf>,
-}
-
-impl Default for ModulePathsConfig {
-    fn default() -> Self {
-        Self {
-            modules: default_module_paths(),
-        }
-    }
-}
+const SUPPORTED_CONFIG_MAJOR: u64 = 2;
+const GENERIC_CONFIG_VERSION_ERROR: &str = "unsupported config format";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SourceCatalogConfig {
+    #[serde(
+        default = "default_local_sources",
+        deserialize_with = "deserialize_source_paths"
+    )]
+    pub local: Vec<PathBuf>,
     #[serde(default)]
     pub git: Vec<String>,
 }
 
-fn default_module_paths() -> Vec<PathBuf> {
+fn default_local_sources() -> Vec<PathBuf> {
     vec![PathBuf::from("./resources"), PathBuf::from("./services")]
+}
+
+fn deserialize_source_paths<'de, D>(deserializer: D) -> std::result::Result<Vec<PathBuf>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let value = Option::<Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(default_local_sources());
+    };
+
+    let mut out = Vec::new();
+    match value {
+        Value::String(path) => out.push(PathBuf::from(path)),
+        Value::Array(items) => {
+            for item in items {
+                let path = item
+                    .as_str()
+                    .ok_or_else(|| D::Error::custom("sources.local items must be strings"))?;
+                out.push(PathBuf::from(path));
+            }
+        }
+        _ => {
+            return Err(D::Error::custom(
+                "sources.local must be a string or array of strings",
+            ));
+        }
+    }
+    Ok(out)
 }
 
 fn deserialize_resources<'de, D>(deserializer: D) -> std::result::Result<Vec<Resource>, D::Error>
@@ -115,8 +139,6 @@ pub struct Config {
     #[serde(default)]
     pub groups: BTreeMap<String, Vec<String>>,
     #[serde(default)]
-    pub paths: ModulePathsConfig,
-    #[serde(default)]
     pub sources: SourceCatalogConfig,
     #[serde(default)]
     pub images: BTreeMap<String, ImageConfig>,
@@ -179,23 +201,23 @@ pub fn resolve_config_path_in(root: &Path, explicit: Option<&Path>) -> Result<Re
 impl Config {
     pub fn from_toml(raw: &str, process_env: &BTreeMap<String, String>) -> Result<Self> {
         let value = raw.parse::<Value>().context("failed to parse vmctl TOML")?;
+        validate_config_version(&value)?;
         let config = Self::from_value(resolve_toml_value(value, process_env)?)?;
         config.validate()?;
         Ok(config)
     }
 
     pub fn from_value(value: Value) -> Result<Self> {
-        let config: Config = value
+        validate_config_version(&value)?;
+        let mut config: Config = value
             .try_into()
             .context("failed to deserialize resolved vmctl config")?;
+        apply_runtime_defaults(&mut config)?;
         config.validate()?;
         Ok(config)
     }
 
     fn validate(&self) -> Result<()> {
-        if self.paths.modules.is_empty() {
-            bail!("paths.modules must include at least one module collection root");
-        }
         let mut names = BTreeSet::new();
         for resource in &self.resources {
             if resource.name.trim().is_empty() {
@@ -302,6 +324,44 @@ impl Config {
         }
         Ok(())
     }
+}
+
+fn validate_config_version(value: &Value) -> Result<()> {
+    let Some(version) = value.get("version").and_then(Value::as_str) else {
+        bail!(GENERIC_CONFIG_VERSION_ERROR);
+    };
+    let Some((major, _minor, _patch)) = parse_semver(version) else {
+        bail!(GENERIC_CONFIG_VERSION_ERROR);
+    };
+    if major != SUPPORTED_CONFIG_MAJOR {
+        bail!(GENERIC_CONFIG_VERSION_ERROR);
+    }
+    Ok(())
+}
+
+fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
+    let core = raw.split_once('-').map(|(left, _)| left).unwrap_or(raw);
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn apply_runtime_defaults(config: &mut Config) -> Result<()> {
+    let Some(runtime_defaults) = config.defaults.get("runtime") else {
+        return Ok(());
+    };
+    let runtime_defaults = runtime_defaults
+        .as_table()
+        .ok_or_else(|| anyhow!("defaults.runtime must be a table"))?;
+    if let Some(engine) = runtime_defaults.get("engine").and_then(Value::as_str) {
+        config.runtime.engine = engine.to_string();
+    }
+    Ok(())
 }
 
 pub fn resolve_toml_value(value: Value, process_env: &BTreeMap<String, String>) -> Result<Value> {
@@ -652,13 +712,15 @@ mod tests {
     #[test]
     fn resolves_direct_const_reference() {
         let cfg = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [const]
             bridge = "vmbr0"
 
             [defaults]
             bridge = "${bridge}"
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap();
@@ -673,13 +735,15 @@ mod tests {
     fn resolves_direct_env_reference() {
         let env = BTreeMap::from([("TAILSCALE_AUTH_KEY".into(), "tskey-123".into())]);
         let cfg = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [env]
             TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
 
             [defaults.features.tailscale]
             auth_key = "${TAILSCALE_AUTH_KEY}"
             "#,
+            ),
             &env,
         )
         .unwrap();
@@ -700,13 +764,15 @@ mod tests {
     fn falls_back_to_process_env_for_empty_env_bindings() {
         let env = BTreeMap::from([("WIREGUARD_PRIVATE_KEY".into(), "wg-key".into())]);
         let cfg = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [env]
             WIREGUARD_PRIVATE_KEY = ""
 
             [defaults.features.vpn]
             wireguard_private_key = "${WIREGUARD_PRIVATE_KEY}"
             "#,
+            ),
             &env,
         )
         .unwrap();
@@ -801,7 +867,8 @@ mod tests {
     fn rejects_ambiguous_direct_reference() {
         let env = BTreeMap::from([("VALUE".into(), "env-value".into())]);
         let err = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [const]
             value = "const-value"
 
@@ -811,6 +878,7 @@ mod tests {
             [defaults]
             bridge = "${value}"
             "#,
+            ),
             &env,
         )
         .unwrap_err();
@@ -821,7 +889,8 @@ mod tests {
     #[test]
     fn rejects_cycles() {
         let err = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [const]
             a = "${const.b}"
             b = "${const.a}"
@@ -829,6 +898,7 @@ mod tests {
             [defaults]
             bridge = "${a}"
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap_err();
@@ -839,7 +909,8 @@ mod tests {
     #[test]
     fn parses_image_catalog_entries() {
         let cfg = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [images.debian_12_lxc]
             kind = "lxc"
             source = "pveam"
@@ -847,6 +918,7 @@ mod tests {
             content_type = "vztmpl"
             template = "debian-12-standard_12.7-1_amd64.tar.zst"
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap();
@@ -859,7 +931,8 @@ mod tests {
     #[test]
     fn parses_resources_table_format() {
         let cfg = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [resources.media-stack]
             kind = "vm"
             role = "media_stack"
@@ -871,6 +944,7 @@ mod tests {
             [resources.media-stack.config.features.media_services]
             services = ["jellyfin", "radarr"]
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap();
@@ -887,13 +961,68 @@ mod tests {
     }
 
     #[test]
-    fn rejects_legacy_resources_array_format() {
+    fn rejects_missing_config_version() {
         let err = Config::from_toml(
             r#"
+            [env]
+            TOKEN = "b"
+            "#,
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("unsupported config format"));
+    }
+
+    #[test]
+    fn sources_local_accepts_single_string() {
+        let cfg = Config::from_toml(
+            &with_version(
+                r#"
+            [sources]
+            local = "./modules"
+            "#,
+            ),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(cfg.sources.local, vec![PathBuf::from("./modules")]);
+    }
+
+    #[test]
+    fn rejects_unsupported_config_major() {
+        let err = Config::from_toml("version = \"3.0.0\"", &BTreeMap::new()).unwrap_err();
+
+        assert!(err.to_string().contains("unsupported config format"));
+    }
+
+    #[test]
+    fn runtime_reads_from_defaults_runtime() {
+        let cfg = Config::from_toml(
+            &with_version(
+                r#"
+            [defaults.runtime]
+            engine = "podman"
+            "#,
+            ),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(cfg.runtime.engine, "podman");
+    }
+
+    #[test]
+    fn rejects_legacy_resources_array_format() {
+        let err = Config::from_toml(
+            &with_version(
+                r#"
             [[resources]]
             name = "media-stack"
             kind = "vm"
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap_err();
@@ -910,7 +1039,8 @@ mod tests {
     #[test]
     fn rejects_invalid_pveam_vm_image() {
         let err = Config::from_toml(
-            r#"
+            &with_version(
+                r#"
             [images.bad]
             kind = "vm"
             source = "pveam"
@@ -918,6 +1048,7 @@ mod tests {
             content_type = "vztmpl"
             template = "debian-12-standard_12.7-1_amd64.tar.zst"
             "#,
+            ),
             &BTreeMap::new(),
         )
         .unwrap_err();
@@ -965,5 +1096,9 @@ mod tests {
                 .as_nanos()
         ));
         dir
+    }
+
+    fn with_version(body: &str) -> String {
+        format!("version = \"2.0.0\"\n{body}")
     }
 }

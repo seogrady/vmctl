@@ -106,21 +106,49 @@ impl SourceResolver for DefaultSourceResolver {
             return Ok(SourceSpec::Inline);
         }
 
-        if let Some(local) = source.strip_prefix("local://") {
-            if local.trim().is_empty() {
-                bail!("local source requires a path");
-            }
-            return Ok(SourceSpec::LocalPath {
-                path: PathBuf::from(local),
-            });
-        }
-
         if let Some(git) = source.strip_prefix("git::") {
             return parse_git_source(git);
         }
 
-        bail!("unsupported source `{source}`");
+        if looks_like_git_source(source) {
+            return Ok(SourceSpec::Git {
+                repo_url: source.to_string(),
+                ref_: "main".to_string(),
+                subdir: None,
+            });
+        }
+
+        if let Some(local) = source.strip_prefix("local://") {
+            return Ok(SourceSpec::LocalPath {
+                path: normalize_local_source_path(local)?,
+            });
+        }
+
+        if source.trim().is_empty() {
+            bail!("local source requires a path");
+        }
+
+        Ok(SourceSpec::LocalPath {
+            path: normalize_local_source_path(source)?,
+        })
     }
+}
+
+fn looks_like_git_source(source: &str) -> bool {
+    source.starts_with("https://") || source.starts_with("ssh://") || source.starts_with("git@")
+}
+
+fn normalize_local_source_path(source: &str) -> Result<PathBuf> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        bail!("local source requires a path");
+    }
+    if let Some(stripped) = trimmed.strip_prefix("./") {
+        if stripped.trim().is_empty() {
+            bail!("local source requires a path");
+        }
+    }
+    Ok(PathBuf::from(trimmed))
 }
 
 fn parse_git_source(value: &str) -> Result<SourceSpec> {
@@ -727,6 +755,39 @@ mod tests {
                 repo_url: "https://github.com/example/vmctl-modules".to_string(),
                 ref_: "v1".to_string(),
                 subdir: Some("jellyfin".to_string()),
+            }
+        );
+
+        assert_eq!(
+            resolver
+                .parse("https://github.com/example/vmctl-modules")
+                .unwrap(),
+            SourceSpec::Git {
+                repo_url: "https://github.com/example/vmctl-modules".to_string(),
+                ref_: "main".to_string(),
+                subdir: None,
+            }
+        );
+        assert_eq!(
+            resolver.parse("./resources/media-stack").unwrap(),
+            SourceSpec::LocalPath {
+                path: PathBuf::from("./resources/media-stack")
+            }
+        );
+        assert_eq!(
+            resolver.parse("resources/media-stack").unwrap(),
+            SourceSpec::LocalPath {
+                path: PathBuf::from("resources/media-stack")
+            }
+        );
+        assert_eq!(
+            resolver
+                .parse("git@github.com:example/private-modules.git")
+                .unwrap(),
+            SourceSpec::Git {
+                repo_url: "git@github.com:example/private-modules.git".to_string(),
+                ref_: "main".to_string(),
+                subdir: None,
             }
         );
     }

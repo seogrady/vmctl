@@ -33,7 +33,7 @@ mounts = [
   "${CONFIG_PATH}/caddy/ui-index:/srv/ui-index:ro",
 ]
 
-[environment]
+[env]
 JELLYFIN_AUTO_AUTH_TOKEN = "${JELLYFIN_AUTO_AUTH_TOKEN}"
 JELLYFIN_STREMIO_AUTH_TOKEN = "${JELLYFIN_STREMIO_AUTH_TOKEN}"
 SEERR_API_KEY = "${SEERR_API_KEY}"

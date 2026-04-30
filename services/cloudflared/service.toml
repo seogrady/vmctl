@@ -18,7 +18,7 @@ container_type = "docker"
 name = "cloudflare/cloudflared"
 tag = "2026.3.0"
 
-[environment]
+[env]
 TUNNEL_TOKEN = "${CLOUDFLARED_TOKEN}"
 
 [settings]

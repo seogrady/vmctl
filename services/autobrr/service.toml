@@ -24,7 +24,7 @@ tag = "latest"
 [volumes]
 mounts = ["${CONFIG_PATH}/autobrr:/config"]
 
-[environment]
+[env]
 AUTOBRR__HOST = "0.0.0.0"
 AUTOBRR__PORT = "7474"
 AUTOBRR__BASE_URL = "/autobrr/"

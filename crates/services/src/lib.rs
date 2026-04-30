@@ -28,6 +28,8 @@ pub struct ServiceManifest {
     pub hooks: HookSection,
     #[serde(default)]
     pub outputs: OutputSection,
+    #[serde(default)]
+    pub env: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -71,6 +73,8 @@ pub struct DependencySection {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuntimeSection {
+    #[serde(default)]
+    pub engine: Option<String>,
     #[serde(default)]
     pub requirements: Vec<String>,
     #[serde(default)]
@@ -295,6 +299,7 @@ impl ServiceRegistry {
         selections: &BTreeMap<String, ServiceSelection>,
         resources: &[Resource],
         target: Option<&str>,
+        default_runtime_engine: &str,
     ) -> Result<ServiceExecutionPlan> {
         let mut requested = BTreeSet::<(String, Option<String>)>::new();
         for (name, selection) in selections {
@@ -356,6 +361,12 @@ impl ServiceRegistry {
             } else {
                 None
             };
+            let runtime_engine = resolve_runtime_engine(
+                default_runtime_engine,
+                resources,
+                plan_target.as_deref(),
+                manifest.runtime.engine.as_deref(),
+            )?;
             instances.push(ServiceInstancePlan {
                 key: instance_key(manifest, plan_target.as_deref()),
                 service: manifest.name.clone(),
@@ -383,6 +394,7 @@ impl ServiceRegistry {
                     .validate
                     .resolve(&self.module_root(&manifest.name))?,
                 runtime_requirements: manifest.runtime.requirements.clone(),
+                runtime_engine,
                 outputs: config,
             });
         }
@@ -577,7 +589,65 @@ fn validate_manifest(manifest: &ServiceManifest) -> Result<()> {
             );
         }
     }
+    if let Some(engine) = manifest.runtime.engine.as_deref() {
+        validate_runtime_engine(engine)
+            .with_context(|| format!("service `{}` has invalid runtime engine", manifest.name))?;
+    }
     Ok(())
+}
+
+fn validate_runtime_engine(engine: &str) -> Result<()> {
+    if !matches!(engine, "docker" | "podman") {
+        bail!("runtime engine must be `docker` or `podman`, got `{engine}`");
+    }
+    Ok(())
+}
+
+fn resolve_runtime_engine(
+    default_runtime_engine: &str,
+    resources: &[Resource],
+    target: Option<&str>,
+    service_runtime_engine: Option<&str>,
+) -> Result<String> {
+    validate_runtime_engine(default_runtime_engine)?;
+
+    let mut engine = default_runtime_engine.to_string();
+    if let Some(target) = target {
+        if let Some(resource_engine) = resources
+            .iter()
+            .find(|resource| resource.name == target)
+            .and_then(resource_runtime_engine)
+        {
+            validate_runtime_engine(&resource_engine)?;
+            engine = resource_engine;
+        }
+    }
+    if let Some(service_engine) = service_runtime_engine {
+        validate_runtime_engine(service_engine)?;
+        engine = service_engine.to_string();
+    }
+    Ok(engine)
+}
+
+fn resource_runtime_engine(resource: &Resource) -> Option<String> {
+    resource
+        .settings
+        .get("runtime")
+        .and_then(Value::as_table)
+        .and_then(|runtime| runtime.get("engine"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            resource
+                .settings
+                .get("resource")
+                .and_then(Value::as_table)
+                .and_then(|resource_table| resource_table.get("runtime"))
+                .and_then(Value::as_table)
+                .and_then(|runtime| runtime.get("engine"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
 }
 
 fn resolve_inputs(
@@ -723,7 +793,9 @@ mod tests {
             ("metrics".to_string(), ServiceSelection::Enabled(true)),
         ]);
 
-        let plan = registry.build_plan(&selections, &[], None).unwrap();
+        let plan = registry
+            .build_plan(&selections, &[], None, "docker")
+            .unwrap();
 
         assert_eq!(
             plan.instances
@@ -743,7 +815,9 @@ mod tests {
         .unwrap();
         let selections = BTreeMap::from([("a".to_string(), ServiceSelection::Enabled(true))]);
 
-        let error = registry.build_plan(&selections, &[], None).unwrap_err();
+        let error = registry
+            .build_plan(&selections, &[], None, "docker")
+            .unwrap_err();
 
         assert!(error.to_string().contains("cycle"));
     }
@@ -761,6 +835,7 @@ mod tests {
                 &BTreeMap::from([("app".to_string(), ServiceSelection::Enabled(true))]),
                 &[],
                 None,
+                "docker",
             )
             .unwrap();
         assert_eq!(disabled.instances.len(), 1);
@@ -773,6 +848,7 @@ mod tests {
                 ]),
                 &[],
                 None,
+                "docker",
             )
             .unwrap();
         assert_eq!(
@@ -798,7 +874,7 @@ mod tests {
         ];
 
         let plan = registry
-            .build_plan(&BTreeMap::new(), &resources, None)
+            .build_plan(&BTreeMap::new(), &resources, None, "docker")
             .unwrap();
 
         assert_eq!(
@@ -838,6 +914,7 @@ mod tests {
                 )]),
                 &[],
                 None,
+                "docker",
             )
             .unwrap();
 
@@ -872,6 +949,64 @@ mod tests {
     }
 
     #[test]
+    fn runtime_precedence_is_default_then_resource_then_service() {
+        let mut app = manifest("app", &[], &[]);
+        app.scope = "resource".to_string();
+        let mut runtime_override = manifest("runtime-override", &[], &[]);
+        runtime_override.scope = "resource".to_string();
+        runtime_override.runtime.engine = Some("docker".to_string());
+        let registry = ServiceRegistry::from_manifests(vec![app, runtime_override]).unwrap();
+
+        let mut resource = resource_with_services("media-stack", &["app", "runtime-override"]);
+        resource.settings.insert(
+            "runtime".to_string(),
+            Value::Table(toml::map::Map::from_iter([(
+                "engine".to_string(),
+                Value::String("podman".to_string()),
+            )])),
+        );
+        let plan = registry
+            .build_plan(&BTreeMap::new(), &[resource], None, "docker")
+            .unwrap();
+
+        let app_instance = plan
+            .instances
+            .iter()
+            .find(|instance| instance.service == "app")
+            .unwrap();
+        assert_eq!(app_instance.runtime_engine, "podman");
+        let override_instance = plan
+            .instances
+            .iter()
+            .find(|instance| instance.service == "runtime-override")
+            .unwrap();
+        assert_eq!(override_instance.runtime_engine, "docker");
+    }
+
+    #[test]
+    fn resource_runtime_table_alias_is_supported() {
+        let mut app = manifest("app", &[], &[]);
+        app.scope = "resource".to_string();
+        let registry = ServiceRegistry::from_manifests(vec![app]).unwrap();
+
+        let mut resource = resource_with_services("media-stack", &["app"]);
+        resource.settings.insert(
+            "resource".to_string(),
+            Value::Table(toml::map::Map::from_iter([(
+                "runtime".to_string(),
+                Value::Table(toml::map::Map::from_iter([(
+                    "engine".to_string(),
+                    Value::String("podman".to_string()),
+                )])),
+            )])),
+        );
+        let plan = registry
+            .build_plan(&BTreeMap::new(), &[resource], None, "docker")
+            .unwrap();
+        assert_eq!(plan.instances[0].runtime_engine, "podman");
+    }
+
+    #[test]
     fn service_hooks_accept_single_paths_arrays_and_globs() {
         let root = unique_temp_dir();
         let app = root.join("app");
@@ -899,6 +1034,7 @@ mod tests {
                 &BTreeMap::new(),
                 &[resource_with_services("media-stack", &["app"])],
                 None,
+                "docker",
             )
             .unwrap();
 
@@ -931,6 +1067,7 @@ mod tests {
             runtime: RuntimeSection::default(),
             hooks: HookSection::default(),
             outputs: OutputSection::default(),
+            env: BTreeMap::new(),
         }
     }
 

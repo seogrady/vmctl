@@ -154,6 +154,8 @@ pub struct ServiceInstancePlan {
     #[serde(default)]
     pub validation_scripts: Vec<String>,
     pub runtime_requirements: Vec<String>,
+    #[serde(default = "default_runtime_engine")]
+    pub runtime_engine: String,
     pub outputs: BTreeMap<String, Value>,
 }
 

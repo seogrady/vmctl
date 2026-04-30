@@ -27,8 +27,8 @@ services:
       - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
       - SERVER_CITIES=${VPN_SERVER_CITIES}
       - FIREWALL_INPUT_PORTS=8080,6881
-{{#if environment}}
-{{#each environment}}
+{{#if env}}
+{{#each env}}
       - "{{@key}}={{this}}"
 {{/each}}
 {{/if}}
@@ -112,9 +112,9 @@ services:
       - "{{this}}"
 {{/each}}
 {{/if}}
-{{#if environment}}
+{{#if env}}
     environment:
-{{#each environment}}
+{{#each env}}
       - "{{@key}}={{this}}"
 {{/each}}
 {{/if}}

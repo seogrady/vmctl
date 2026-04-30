@@ -27,7 +27,7 @@ published = ["5000:5000"]
 [volumes]
 mounts = ["${CONFIG_PATH}/jellyfin:/config:ro"]
 
-[environment]
+[env]
 MEILI_URL = "http://meilisearch:7700"
 MEILI_MASTER_KEY = "${MEILI_MASTER_KEY}"
 JELLYFIN_URL = "${JELLYFIN_INTERNAL_URL}"

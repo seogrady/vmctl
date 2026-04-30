@@ -1,4 +1,5 @@
 # Copy to `vmctl.toml` for local overrides.
+version = "2.0.0"
 
 [backend]
 kind = "tofu"
@@ -11,13 +12,8 @@ token_id = "${PROXMOX_TOKEN_ID}"
 token_secret = "${PROXMOX_TOKEN_SECRET}"
 tls_insecure = true
 
-[runtime]
-engine = "docker"
-
-[paths]
-modules = ["./resources", "./services"]
-
 [sources]
+local = ["./resources", "./services"]
 git = []
 
 [defaults]
@@ -28,23 +24,8 @@ start_on_boot = true
 agent = true
 tags = ["vmctl", "homelab"]
 
-[defaults.features.media_services.playback]
-enable_pre_normalization = false
-enable_remote_transcoder = false
-remove_original_after_normalization = false
-remote_transcoder_host = ""
-remote_transcoder_user = "ubuntu"
-remote_transcoder_ssh_key = "/root/.ssh/id_ed25519"
-remote_transcoder_ffmpeg = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
-normalize_video_codec = "libx265"
-normalize_preset = "slow"
-normalize_crf = 19
-normalize_audio_codec = "aac"
-normalize_audio_bitrate = "384k"
-normalize_max_width = 0
-tone_map_enabled = true
-tone_map_algorithm = "hable"
-tone_map_desat = "0.0"
+[defaults.runtime]
+engine = "docker"
 
 [defaults.cloud_init]
 ssh_key_file = "${DEFAULT_SSH_KEY_FILE}"
@@ -68,52 +49,6 @@ PROXMOX_TOKEN_SECRET = "${PROXMOX_TOKEN_SECRET}"
 TAILSCALE_AUTH_KEY = "${TAILSCALE_AUTH_KEY}"
 DEFAULT_SSH_KEY_FILE = "${DEFAULT_SSH_KEY_FILE}"
 DEFAULT_SSH_PRIVATE_KEY_FILE = "${DEFAULT_SSH_PRIVATE_KEY_FILE}"
-JELLYFIN_ADMIN_USER = "admin"
-JELLYFIN_ADMIN_PASSWORD = "${JELLYFIN_ADMIN_PASSWORD}"
-GITEA_ADMIN_USER = "admin"
-GITEA_ADMIN_PASSWORD = "changeme"
-GITEA_ADMIN_EMAIL = "admin@gitea.local"
-GITEA_DOMAIN = "gitea"
-GITEA_HTTP_PORT = "3000"
-GITEA_SSH_PORT = "2222"
-GITEA_BASE_URL = ""
-GITEA_SSH_HOST = ""
-GITEA_TAILSCALE_HTTPS_ENABLED = "true"
-GITEA_TAILSCALE_HTTPS_TARGET = ""
-QBITTORRENT_CATEGORY_TV_PATH = "/data/torrents/tv"
-QBITTORRENT_CATEGORY_MOVIES_PATH = "/data/torrents/movies"
-SEERR_API_KEY = ""
-CLOUDFLARED_TOKEN = ""
-SABNZBD_API_KEY = ""
-SABNZBD_USERNAME = ""
-SABNZBD_PASSWORD = ""
-SABNZBD_SERVER_NAME = ""
-SABNZBD_SERVER_DISPLAY_NAME = ""
-SABNZBD_SERVER_HOST = ""
-SABNZBD_SERVER_PORT = "563"
-SABNZBD_SERVER_USERNAME = ""
-SABNZBD_SERVER_PASSWORD = ""
-SABNZBD_SERVER_CONNECTIONS = "10"
-SABNZBD_SERVER_TIMEOUT = "120"
-SABNZBD_SERVER_RETENTION = "0"
-SABNZBD_SERVER_SSL = "true"
-SABNZBD_SERVER_ENABLE = ""
-AUTOBRR_URL = "http://localhost:7474"
-AUTOBRR_INTERNAL_URL = "http://autobrr:7474"
-AUTOBRR_USERNAME = "admin"
-AUTOBRR_PASSWORD = ""
-AUTOBRR_BASE_URL = "/autobrr/"
-AUTOBRR_SESSION_SECRET = ""
-AUTOBRR_API_KEY = ""
-AUTOBRR_CUSTOM_DEFINITIONS = "/config/definitions"
-SONARR_DEFAULT_QUALITY_PROFILE = "WEB-1080p"
-RADARR_DEFAULT_QUALITY_PROFILE = "HD Bluray + WEB"
-CLOUDFLARE_PUBLIC_BASE_URL = ""
-WIREGUARD_PRIVATE_KEY = ""
-WIREGUARD_ADDRESSES = ""
-VPN_SERVER_CITIES = ""
-PROWLARR_FLARESOLVERR_URL = "http://flaresolverr:8191"
-PROWLARR_FLARESOLVERR_TAGS = ""
 
 [images.debian_12_lxc]
 kind = "lxc"

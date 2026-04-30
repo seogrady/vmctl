@@ -30,6 +30,6 @@ command = "python3 /app/jellio-shim.py"
 [volumes]
 mounts = ["${CONFIG_PATH}/jellio-shim:/app:ro"]
 
-[environment]
+[env]
 JELLIO_SHIM_LISTEN = "0.0.0.0:8098"
 JELLIO_SHIM_UPSTREAM = "${JELLYFIN_INTERNAL_URL}"

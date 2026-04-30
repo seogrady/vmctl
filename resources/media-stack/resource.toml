@@ -23,6 +23,13 @@ ssh_key_file = "${env.DEFAULT_SSH_KEY_FILE}"
 user = "ubuntu"
 private_key_file = "${env.DEFAULT_SSH_PRIVATE_KEY_FILE}"
 
+[env]
+JELLYFIN_ADMIN_USER = "admin"
+JELLYFIN_ADMIN_PASSWORD = ""
+WIREGUARD_PRIVATE_KEY = ""
+WIREGUARD_ADDRESSES = ""
+VPN_SERVER_CITIES = ""
+
 [features.docker]
 enabled = true
 

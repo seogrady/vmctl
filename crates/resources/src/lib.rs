@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use handlebars::handlebars_helper;
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ pub struct ServiceDefinition {
     #[serde(default)]
     pub group_add: Vec<String>,
     #[serde(default)]
-    pub environment: BTreeMap<String, Value>,
+    pub env: BTreeMap<String, Value>,
     #[serde(default)]
     pub ports: BTreeMap<String, Value>,
     #[serde(default)]
@@ -613,15 +613,36 @@ fn load_toml_value(
         .with_context(|| format!("failed to parse {}", path.display()))?;
     match (config_context, process_env) {
         (Some(config_context), Some(process_env)) => {
+            let merged_context = merge_context_env(config_context, &value)?;
             vmctl_config::resolve_toml_value_with_context_passthrough(
                 value,
-                config_context,
+                &merged_context,
                 process_env,
             )
             .with_context(|| format!("failed to interpolate {}", path.display()))
         }
         _ => Ok(value),
     }
+}
+
+fn merge_context_env(context: &Value, module_value: &Value) -> Result<Value> {
+    let mut merged = context.clone();
+    let Some(module_env) = module_value.get("env").and_then(Value::as_table) else {
+        return Ok(merged);
+    };
+    let merged_table = merged
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("vmctl config context must be a table"))?;
+    let env = merged_table
+        .entry("env".to_string())
+        .or_insert_with(|| Value::Table(toml::map::Map::new()));
+    let env_table = env
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("vmctl config [env] must be a table"))?;
+    for (key, value) in module_env {
+        env_table.insert(key.clone(), value.clone());
+    }
+    Ok(merged)
 }
 
 fn render_template(source: &Path, context: &serde_json::Value) -> Result<String> {
@@ -1180,6 +1201,90 @@ mod tests {
 
         let rendered = std::fs::read_to_string(output.join("resources/guest/example.env")).unwrap();
         assert_eq!(rendered, "Demo UI=8123");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn service_env_overrides_global_env_during_interpolation() {
+        let root = unique_temp_dir();
+        let resources_root = root.join("resources");
+        let services_root = root.join("services");
+        std::fs::create_dir_all(resources_root.join("guest/templates")).unwrap();
+        std::fs::create_dir_all(services_root.join("demo")).unwrap();
+
+        std::fs::write(
+            resources_root.join("guest/resource.toml"),
+            r#"
+            name = "guest"
+            kind = "vm"
+            role = "example"
+
+            [features.bundle]
+            services = ["demo"]
+
+            [render]
+            templates = ["example.env.hbs"]
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            services_root.join("demo/service.toml"),
+            r#"
+            name = "demo"
+            container_type = "docker"
+
+            [env]
+            DEMO_UI_NAME = "Service UI"
+
+            [ui]
+            enabled = true
+            port = 8123
+            name = "${env.DEMO_UI_NAME}"
+            "#,
+        )
+        .unwrap();
+        std::fs::write(
+            resources_root.join("guest/templates/example.env.hbs"),
+            "{{#each ui_services}}{{name}}={{port}}{{/each}}",
+        )
+        .unwrap();
+
+        let config_context = r#"
+            [env]
+            DEMO_UI_NAME = "Global UI"
+        "#
+        .parse::<Value>()
+        .unwrap();
+        let registry = ResourceRegistry::load_with_config(
+            &resources_root,
+            &services_root,
+            &config_context,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let resource = Resource {
+            name: "guest".to_string(),
+            kind: "vm".to_string(),
+            enabled: true,
+            image: None,
+            role: Some("example".to_string()),
+            vmid: None,
+            depends_on: Vec::new(),
+            features: BTreeMap::new(),
+            settings: BTreeMap::new(),
+        };
+        let expansion = registry.expand_resource(&resource).unwrap();
+        let output = root.join("generated");
+        registry
+            .render_artifacts(
+                &output,
+                &[resource],
+                &BTreeMap::from([("guest".to_string(), expansion)]),
+            )
+            .unwrap();
+
+        let rendered = std::fs::read_to_string(output.join("resources/guest/example.env")).unwrap();
+        assert_eq!(rendered, "Service UI=8123");
         std::fs::remove_dir_all(root).unwrap();
     }
 

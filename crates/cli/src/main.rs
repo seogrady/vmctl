@@ -2640,8 +2640,13 @@ fn build_module_registry(
 ) -> Result<ResolvedModuleRegistry> {
     let mut registry_builder = ModuleRegistryBuilder::default();
 
-    for root in &config.paths.modules {
-        let path = resolve_workspace_path(&workspace_root, root);
+    for root in &config.sources.local {
+        let SourceSpec::LocalPath { path: source_path } =
+            resolver.parse(&root.to_string_lossy())?
+        else {
+            bail!("sources.local entries must resolve to local paths");
+        };
+        let path = resolve_workspace_path(&workspace_root, &source_path);
         scanned_roots.push(path.clone());
         registry_builder.add_indexed(
             indexer.index_collection(
@@ -2667,10 +2672,10 @@ fn build_module_registry(
                         collection_root: path.clone(),
                         module_dir: PathBuf::new(),
                     },
-            )?,
-            ModuleLayer::Local,
-        )?;
-    }
+                )?,
+                ModuleLayer::Local,
+            )?;
+        }
     }
 
     for git_source in &config.sources.git {
@@ -2680,7 +2685,7 @@ fn build_module_registry(
             subdir,
         } = resolver.parse(git_source)?
         else {
-            bail!("sources.git entry must be git::..., got `{git_source}`");
+            bail!("sources.git entry must be a git URL, got `{git_source}`");
         };
         let resolved = repo_manager.ensure_repo(
             &vmctl_modules::RepoRef {
@@ -2965,7 +2970,7 @@ fn resolve_git_refs(
                 subdir: _,
             } = resolver.parse(source)?
             else {
-                bail!("sources.git entry must be git::..., got `{source}`");
+                bail!("sources.git entry must be a git URL, got `{source}`");
             };
             Ok(vmctl_modules::RepoRef { repo_url, ref_ })
         })
@@ -4145,7 +4150,7 @@ Interface: vmbr0
         )
         .unwrap();
         let config_path = root.join("vmctl.toml");
-        std::fs::write(&config_path, "").unwrap();
+        std::fs::write(&config_path, "version = \"2.0.0\"\n").unwrap();
         let workspace = Workspace {
             root: root.clone(),
             generated_dir,

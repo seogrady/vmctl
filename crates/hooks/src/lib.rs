@@ -641,10 +641,13 @@ fn build_resource_env(
     manifest: &ResourceManifest,
 ) -> BTreeMap<String, String> {
     let mut env = base_env(desired);
+    let resource_env = resource_env_map(resource);
     env.extend(flatten_toml_map("", &config.consts));
     env.extend(flatten_toml_map("", &config.env));
     env.extend(flatten_toml_map("VMCTL_CONST", &config.consts));
     env.extend(flatten_toml_map("VMCTL_ENV", &config.env));
+    env.extend(flatten_toml_map("", &resource_env));
+    env.extend(flatten_toml_map("VMCTL_RESOURCE_ENV", &resource_env));
     env.insert("VMCTL_COMMAND".to_string(), command.to_string());
     env.insert("VMCTL_RESOURCE_NAME".to_string(), resource.name.clone());
     env.insert("VMCTL_RESOURCE_KIND".to_string(), resource.kind.clone());
@@ -705,6 +708,10 @@ fn build_service_env(
     env.insert("VMCTL_SERVICE_KEY".to_string(), instance.key.clone());
     env.insert("VMCTL_SERVICE_SCOPE".to_string(), instance.scope.clone());
     env.insert(
+        "VMCTL_RUNTIME_ENGINE".to_string(),
+        instance.runtime_engine.clone(),
+    );
+    env.insert(
         "VMCTL_SERVICE_TARGET".to_string(),
         instance.target.clone().unwrap_or_default(),
     );
@@ -736,6 +743,8 @@ fn build_service_env(
             .to_string_lossy()
             .to_string(),
     );
+    env.extend(flatten_toml_map("", &manifest.env));
+    env.extend(flatten_toml_map("VMCTL_SERVICE_ENV", &manifest.env));
     if let Some(port) = instance
         .outputs
         .get("http_port")
@@ -762,6 +771,34 @@ fn build_service_env(
         }
     }
     env
+}
+
+fn resource_env_map(resource: &Resource) -> BTreeMap<String, Value> {
+    resource
+        .settings
+        .get("env")
+        .and_then(Value::as_table)
+        .map(|table| {
+            table
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .or_else(|| {
+            resource
+                .settings
+                .get("resource")
+                .and_then(Value::as_table)
+                .and_then(|resource_table| resource_table.get("env"))
+                .and_then(Value::as_table)
+                .map(|table| {
+                    table
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect::<BTreeMap<_, _>>()
+                })
+        })
+        .unwrap_or_default()
 }
 
 fn service_urls_for_target(
@@ -1003,7 +1040,6 @@ mod tests {
             consts: BTreeMap::new(),
             env: BTreeMap::new(),
             groups: BTreeMap::from([("pair".to_string(), vec!["b".to_string(), "c".to_string()])]),
-            paths: Default::default(),
             sources: Default::default(),
             images: BTreeMap::new(),
             resources: Vec::new(),
@@ -1117,7 +1153,6 @@ echo "${VMCTL_RESOURCE_NAME}:${VMCTL_COMMAND}" >> "$HOOK_LOG_PATH"
                 Value::String(log_path.to_string_lossy().to_string()),
             )]),
             groups: BTreeMap::new(),
-            paths: Default::default(),
             sources: Default::default(),
             images: BTreeMap::new(),
             resources: Vec::new(),
