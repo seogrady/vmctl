@@ -206,7 +206,7 @@ install_docker
 ensure_act_runner_user
 install_act_runner_binary
 
-install -d -m 0750 -o root -g root /etc/act_runner
+install -d -m 0750 -o root -g act_runner /etc/act_runner
 
 cat > /etc/systemd/system/act_runner@.service <<'EOF_UNIT'
 [Unit]
@@ -290,7 +290,7 @@ container:
   valid_volumes: []
   docker_host: "-"
 EOF_CFG
-  chown root:root "$config_file"
+  chown root:act_runner "$config_file"
   chmod 0640 "$config_file"
 
   if [[ ! -s "${instance_dir}/.runner" ]]; then

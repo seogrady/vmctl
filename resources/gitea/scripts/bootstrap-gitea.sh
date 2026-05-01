@@ -341,13 +341,29 @@ if is_truthy "$GITEA_BOOTSTRAP_REPO_ENABLED"; then
     bootstrap_repo_private="true"
   fi
 
+  resolve_secret_value() {
+    local raw="${1:-}"
+    if [[ -z "$raw" ]]; then
+      printf ''
+      return 0
+    fi
+    if [[ -f "$raw" ]]; then
+      cat "$raw"
+      return 0
+    fi
+    printf '%s' "$raw"
+  }
+
+  bootstrap_secret_ssh_private="$(resolve_secret_value "$GITEA_BOOTSTRAP_SECRET_DEFAULT_SSH_PRIVATE_KEY")"
+  bootstrap_secret_ssh_public="$(resolve_secret_value "$GITEA_BOOTSTRAP_SECRET_DEFAULT_SSH_PUBLIC_KEY")"
+
   python3 - "$api_base" "$GITEA_ADMIN_USER" "$GITEA_ADMIN_PASSWORD" \
     "$GITEA_BOOTSTRAP_REPO_NAME" "$bootstrap_repo_private" "$GITEA_BOOTSTRAP_SECRETS_ENABLED" \
     "$GITEA_BOOTSTRAP_SECRET_PROXMOX_TOKEN_ID" \
     "$GITEA_BOOTSTRAP_SECRET_PROXMOX_TOKEN_SECRET" \
     "$GITEA_BOOTSTRAP_SECRET_TAILSCALE_AUTH_KEY" \
-    "$GITEA_BOOTSTRAP_SECRET_DEFAULT_SSH_PRIVATE_KEY" \
-    "$GITEA_BOOTSTRAP_SECRET_DEFAULT_SSH_PUBLIC_KEY" <<'PY'
+    "$bootstrap_secret_ssh_private" \
+    "$bootstrap_secret_ssh_public" <<'PY'
 import base64
 import json
 import sys
