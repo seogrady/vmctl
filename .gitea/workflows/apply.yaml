@@ -42,7 +42,7 @@ jobs:
           PROXMOX_TOKEN_ID: ${{ secrets.PROXMOX_TOKEN_ID }}
           PROXMOX_TOKEN_SECRET: ${{ secrets.PROXMOX_TOKEN_SECRET }}
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          VMCTL_HOST: 192.168.86.104
+          VMCTL_HOST: 100.92.58.15
         run: |
           set -euo pipefail
           tar -czf /tmp/vmctl-src.tgz .
